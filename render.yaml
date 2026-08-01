@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+
+previews:
+  generation: "off"
+
+services:
+  - type: web
+    name: relaybuy
+    runtime: node
+    region: singapore
+    plan: free
+    autoDeployTrigger: "off"
+    buildCommand: npm ci && npm run build
+    startCommand: npm start -- -H 0.0.0.0 -p $PORT
+    healthCheckPath: /api/health
+    domains:
+      - relaybuy.a2zbtc.com
+    envVars:
+      - key: APP_BASE_URL
+        value: https://relaybuy.a2zbtc.com
+      - key: APPROVAL_TOKEN_PEPPER
+        generateValue: true
+      - key: READINESS_PROBE_TOKEN
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: relaybuy-hackathon-db
+          property: connectionString
+      - key: DATABASE_SSL
+        value: require
+      - key: LIVE_REQUEST_TTL_MINUTES
+        value: "180"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: TRUST_PROXY_HEADERS
+        value: "false"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.6-luna
+      - key: OPENAI_FALLBACK_MODEL
+        value: gpt-5.6-sol
+      - key: OPENAI_EXTRACTION_ENABLED
+        value: "false"
+      - key: OPENAI_AGENTS_DISABLE_TRACING
+        value: "1"
+      - key: OPENAI_TRACE_INCLUDE_SENSITIVE_DATA
+        value: "false"
+      - key: PRAVA_ENV
+        value: sandbox
+      - key: PRAVA_MODE
+        value: replay
+      - key: PRAVA_MERCHANT_COUNTRY
+        value: US
+      - key: PRAVA_MERCHANT_SECRET_KEY
+        sync: false
+      - key: PRAVA_REQUEST_TIMEOUT_MS
+        value: "45000"
+      - key: PRAVA_USER_EMAIL
+        value: sandbox-user@relaybuy.app
+      - key: PRAVA_USER_ID
+        value: relaybuy-sandbox-user
+      - key: PAYMENTS_ENABLED
+        value: "false"
+      - key: ALLOW_PRAVA_SESSION_CREATION
+        value: "false"
+      - key: ALLOW_PRAVA_LIVE_ORDER
+        value: "false"
+      - key: PRAVA_MCP_CONTRACT_CONFIRMED
+        value: "false"
+      - key: REPLAY_MUTATIONS_ENABLED
+        value: "false"
+      - key: RELAYBUY_MERCHANT_ATTEMPT_ENABLED
+        value: "false"
+      - key: RELAYBUY_SECURITY_EMAIL
+        value: security@a2zbtc.com
+      - key: SENSO_API_KEY
+        sync: false
+      - key: SENSO_BASE_URL
+        value: https://apiv2.senso.ai/api/v1
+      - key: SENSO_MIN_SCORE
+        value: "0.35"
+      - key: SENSO_POLICY_BINDINGS
+        sync: false

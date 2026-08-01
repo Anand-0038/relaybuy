@@ -1,0 +1,48 @@
+{
+  "name": "relaybuy",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint . --max-warnings=0",
+    "preflight": "node scripts/provider-preflight.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "rehearse": "playwright test tests/e2e/demo.spec.ts --workers=1 --repeat-each=5",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@openai/agents": "^0.13.5",
+    "next": "16.2.12",
+    "playwright": "^1.62.0",
+    "postgres": "^3.4.9",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "zod": "4.4.3"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.25",
+      "sharp": "0.35.3"
+    }
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0",
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.12",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}

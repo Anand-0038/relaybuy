@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">RelayBuy pinned icon</title>
+  <desc id="desc">RelayBuy monochrome mark</desc>
+  <path
+    d="M130 136v248"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="72"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M130 136h153.2c88.3 0 138.8 49.8 138.8 154 0 104.2-50.5 154-138.8 154H130"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="72"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

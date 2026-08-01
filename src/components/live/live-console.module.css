@@ -1,0 +1,454 @@
+.livePage,
+.approvalPage {
+  --live-canvas: #f7f6f1;
+  --live-surface: #fff;
+  --live-ink: #111816;
+  --live-muted: #60706a;
+  --live-border: #dce4e0;
+  --live-primary: #0d8b80;
+  --live-primary-strong: #0a6d65;
+  --live-soft: #dff6f1;
+  --live-night: #102925;
+  --live-warning: #a95b0c;
+  --live-warning-soft: #fff1d7;
+  --live-danger: #aa2e25;
+  --live-danger-soft: #fce9e6;
+  background:
+    radial-gradient(
+      circle at 8% 10%,
+      rgba(13, 139, 128, 0.11),
+      transparent 28rem
+    ),
+    linear-gradient(135deg, var(--live-canvas), #eef3f0);
+  color: var(--live-ink);
+  min-height: 100vh;
+  padding: clamp(1.25rem, 4vw, 4rem);
+}
+
+.hero {
+  align-items: end;
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 25rem);
+  margin: 0 auto 2rem;
+  max-width: 94rem;
+}
+
+.hero h1,
+.approvalPanel h1 {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: clamp(3rem, 7vw, 6.5rem);
+  letter-spacing: -0.065em;
+  line-height: 0.92;
+  margin: 0.5rem 0 1.25rem;
+  max-width: 12ch;
+}
+
+.eyebrow,
+.cardOwner {
+  color: var(--live-primary-strong);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.lede {
+  color: var(--live-muted);
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  line-height: 1.55;
+  margin: 0;
+  max-width: 50rem;
+}
+
+.statusPanel {
+  align-items: center;
+  background: var(--live-night);
+  border-radius: 1.25rem;
+  color: white;
+  display: flex;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.statusPanel strong,
+.statusPanel small {
+  display: block;
+}
+
+.statusPanel small {
+  color: #a8c1bb;
+  margin-top: 0.2rem;
+}
+
+.statusDot {
+  background: #51d196;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0.4rem rgba(81, 209, 150, 0.16);
+  height: 0.7rem;
+  width: 0.7rem;
+}
+
+.workspace {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(20rem, 28rem) minmax(0, 1fr);
+  margin: 0 auto;
+  max-width: 94rem;
+}
+
+.composer,
+.results,
+.approvalPanel {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--live-border);
+  border-radius: 1.5rem;
+  box-shadow: 0 1.5rem 4rem rgba(17, 24, 22, 0.07);
+}
+
+.composer {
+  align-self: start;
+  padding: 1.5rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.sectionHeading {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.sectionHeading > span {
+  background: var(--live-primary);
+  border-radius: 0.7rem;
+  color: white;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0.65rem;
+}
+
+.sectionHeading h2,
+.resultHeader h2,
+.card h3 {
+  margin: 0;
+}
+
+.sectionHeading p,
+.citation p,
+.card > p,
+.safetyCopy {
+  color: var(--live-muted);
+  line-height: 1.5;
+}
+
+.composer label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.composer textarea {
+  background: var(--live-canvas);
+  border: 1px solid var(--live-border);
+  border-radius: 0.9rem;
+  color: var(--live-ink);
+  font: inherit;
+  line-height: 1.55;
+  padding: 1rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.composer textarea:focus {
+  border-color: var(--live-primary);
+  box-shadow: 0 0 0 0.2rem rgba(13, 139, 128, 0.12);
+  outline: none;
+}
+
+.primaryButton {
+  background: var(--live-primary);
+  border: 0;
+  border-radius: 0.8rem;
+  color: white;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-weight: 800;
+  justify-content: center;
+  margin-top: 1rem;
+  padding: 0.9rem 1.1rem;
+  text-decoration: none;
+}
+
+.primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.results {
+  padding: 1.5rem;
+}
+
+.resultHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.stateBadge,
+.approvalLink {
+  background: var(--live-soft);
+  border-radius: 999px;
+  color: var(--live-primary-strong);
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 0.6rem 0.8rem;
+  text-transform: uppercase;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.card,
+.auditCard {
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+  border-radius: 1rem;
+  padding: 1.2rem;
+}
+
+.card h3 {
+  font-size: 1.25rem;
+  margin-top: 0.75rem;
+}
+
+.card dl {
+  margin: 1rem 0 0;
+}
+
+.card dl div,
+.artifact > div {
+  align-items: baseline;
+  border-top: 1px solid var(--live-border);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.7rem 0;
+}
+
+.card dt,
+.artifact span {
+  color: var(--live-muted);
+  font-size: 0.78rem;
+}
+
+.card dd {
+  font-weight: 800;
+  margin: 0;
+  text-align: right;
+}
+
+.citationList {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+
+.citation {
+  background: #eee9ff;
+  border-radius: 0.8rem;
+  padding: 0.8rem;
+}
+
+.citation strong,
+.citation span {
+  display: block;
+}
+
+.citation span {
+  color: #6d4aff;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.7rem;
+  margin-top: 0.25rem;
+}
+
+.citation p {
+  font-size: 0.8rem;
+  margin-bottom: 0;
+}
+
+.refusalCard {
+  background: var(--live-danger-soft);
+  border-color: rgba(170, 46, 37, 0.35);
+}
+
+.checkList {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+}
+
+.checkList li {
+  background: var(--live-canvas);
+  border-left: 0.25rem solid var(--live-primary);
+  border-radius: 0.5rem;
+  padding: 0.65rem;
+}
+
+.checkList li[data-status="fail"] {
+  border-left-color: var(--live-danger);
+}
+
+.checkList strong,
+.checkList span {
+  display: block;
+}
+
+.checkList span {
+  color: var(--live-muted);
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
+}
+
+.approvalLink {
+  display: block;
+  margin-top: 0.75rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.auditCard {
+  margin-top: 1rem;
+}
+
+.auditCard ol {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.auditCard li {
+  align-items: center;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 2rem minmax(0, 1fr) 5rem;
+}
+
+.auditCard li > span {
+  color: var(--live-primary);
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.auditCard small {
+  color: var(--live-muted);
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.errorBanner,
+.successBanner {
+  border-radius: 0.8rem;
+  font-weight: 700;
+  line-height: 1.5;
+  margin-top: 1rem;
+  padding: 0.9rem;
+}
+
+.errorBanner {
+  background: var(--live-danger-soft);
+  color: var(--live-danger);
+}
+
+.successBanner {
+  background: var(--live-soft);
+  color: var(--live-primary-strong);
+}
+
+.approvalPage {
+  align-items: center;
+  display: grid;
+  justify-items: center;
+}
+
+.approvalPanel {
+  max-width: 52rem;
+  padding: clamp(1.5rem, 5vw, 4rem);
+  width: 100%;
+}
+
+.approvalPanel h1 {
+  font-size: clamp(2.8rem, 7vw, 5.5rem);
+  margin-top: 1rem;
+}
+
+.artifact {
+  background: var(--live-canvas);
+  border-radius: 1rem;
+  margin-top: 2rem;
+  padding: 1rem;
+}
+
+.artifact strong {
+  text-align: right;
+}
+
+.artifact .hashRow {
+  display: block;
+}
+
+.hashRow code {
+  display: block;
+  font-size: 0.72rem;
+  margin-top: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.backLink {
+  color: var(--live-primary-strong);
+  display: inline-block;
+  font-weight: 800;
+  margin: 1.25rem 0 0 1rem;
+}
+
+@media (max-width: 72rem) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(18rem, 23rem) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 50rem) {
+  .hero,
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .composer {
+    position: static;
+  }
+
+  .livePage,
+  .approvalPage {
+    padding: 1rem;
+  }
+}
