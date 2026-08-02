@@ -43,28 +43,68 @@ export class RequestSecurityError extends Error {
   }
 }
 
-function allowedOrigins(request: Request): Set<string> {
+function configuredApplicationUrl(): URL | null {
   const configured = process.env.APP_BASE_URL?.trim();
-  const origins = new Set([new URL(request.url).origin]);
+
+  if (!configured) {
+    if (process.env.NODE_ENV === "production") {
+      throw new RequestSecurityError(
+        "INVALID_ORIGIN",
+        500,
+        "APP_BASE_URL is required in production",
+      );
+    }
+    return null;
+  }
+
+  try {
+    return new URL(configured);
+  } catch {
+    throw new RequestSecurityError(
+      "INVALID_ORIGIN",
+      500,
+      "APP_BASE_URL is not a valid absolute URL",
+    );
+  }
+}
+
+function allowedOrigins(request: Request): Set<string> {
+  const configured = configuredApplicationUrl();
+  const origins = new Set<string>();
 
   if (process.env.NODE_ENV !== "production") {
+    origins.add(new URL(request.url).origin);
     origins.add("http://localhost:3000");
     origins.add("http://127.0.0.1:3000");
   }
 
   if (configured) {
-    try {
-      origins.add(new URL(configured).origin);
-    } catch {
-      throw new RequestSecurityError(
-        "INVALID_ORIGIN",
-        500,
-        "APP_BASE_URL is not a valid absolute URL",
-      );
-    }
+    origins.add(configured.origin);
   }
 
   return origins;
+}
+
+function assertProductionRequestHost(request: Request): void {
+  if (process.env.NODE_ENV !== "production") return;
+
+  const configured = configuredApplicationUrl();
+  if (!configured) return;
+
+  const requestUrl = new URL(request.url);
+  const suppliedHosts = [
+    requestUrl.host,
+    request.headers.get("host")?.trim(),
+    request.headers.get("x-forwarded-host")?.split(",").at(-1)?.trim(),
+  ].filter((host): host is string => Boolean(host));
+
+  if (suppliedHosts.some((host) => host !== configured.host)) {
+    throw new RequestSecurityError(
+      "INVALID_ORIGIN",
+      403,
+      "The request host is not allowed",
+    );
+  }
 }
 
 function enforceRateLimit(
@@ -140,6 +180,7 @@ export function assertTrustedMutationRequest(
 }
 
 export function assertTrustedMutationOrigin(request: Request): void {
+  assertProductionRequestHost(request);
   const origin = request.headers.get("origin");
   const permittedOrigins = allowedOrigins(request);
   const fetchSite = request.headers.get("sec-fetch-site");
@@ -155,6 +196,31 @@ export function assertTrustedMutationOrigin(request: Request): void {
       "The request origin is not allowed",
     );
   }
+}
+
+export const EXECUTION_CAPABILITY_COOKIE = "relaybuy_execution";
+
+export function readExecutionCapability(request: Request): string {
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const encodedCapability = cookieHeader
+    .split(";")
+    .map((part) => part.trim().split("="))
+    .find(([name]) => name === EXECUTION_CAPABILITY_COOKIE)?.[1];
+  let capability = "";
+  try {
+    capability = encodedCapability ? decodeURIComponent(encodedCapability) : "";
+  } catch {
+    capability = "";
+  }
+
+  if (!/^rb_exec_[A-Za-z0-9_-]{43}$/.test(capability)) {
+    throw new RequestSecurityError(
+      "UNAUTHORIZED",
+      401,
+      "A valid execution capability is required",
+    );
+  }
+  return capability;
 }
 
 export function assertCapabilityRateLimit(

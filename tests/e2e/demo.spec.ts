@@ -16,7 +16,7 @@ test("the root route opens the current fail-closed connected control plane", asy
     /Bones Coffee Company gift card/,
   );
   await expect(
-    page.getByRole("heading", { name: "No session created" }),
+    page.getByRole("heading", { name: "Prava session: not created" }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Open artifact approval" }),
@@ -53,7 +53,7 @@ test("legacy approval capability routes redirect without an approval action", as
     page.getByRole("button", { name: "Approve exact artifact" }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "No session created" }),
+    page.getByRole("heading", { name: "Prava session: not created" }),
   ).toBeVisible();
 });
 

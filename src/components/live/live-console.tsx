@@ -58,6 +58,7 @@ function money(value: number | null, currency = "USD"): string {
 export function LiveConsole() {
   const [approvalUrl, setApprovalUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [requestText, setRequestText] = useState(exampleRequest);
   const [requestCapability, setRequestCapability] = useState<string | null>(
@@ -65,6 +66,32 @@ export function LiveConsole() {
   );
   const [snapshot, setSnapshot] = useState<LiveRequestSnapshot | null>(null);
   const [stage, setStage] = useState("Ready");
+
+  async function completeEvidencePath(
+    request: LiveRequestSnapshot,
+    capability: string,
+  ) {
+    setStage("Senso resolving cited evidence");
+    let result = await post<{ request: LiveRequestSnapshot }>(
+      `/api/live/requests/${request.id}/evidence`,
+      undefined,
+      capability,
+    );
+    setSnapshot(result.request);
+
+    setStage("Code evaluating hard gates");
+    result = await post<{ request: LiveRequestSnapshot }>(
+      `/api/live/requests/${request.id}/evaluate`,
+      undefined,
+      capability,
+    );
+    setSnapshot(result.request);
+    setStage(
+      result.request.state === "refused"
+        ? "Refused before payment"
+        : "Ready for artifact approval",
+    );
+  }
 
   async function runWorkflow() {
     setBusy(true);
@@ -88,29 +115,48 @@ export function LiveConsole() {
         capability,
       );
       setSnapshot(result.request);
-
-      setStage("Senso resolving cited evidence");
-      result = await post<{ request: LiveRequestSnapshot }>(
-        `/api/live/requests/${result.request.id}/evidence`,
-        undefined,
-        capability,
-      );
-      setSnapshot(result.request);
-
-      setStage("Code evaluating hard gates");
-      result = await post<{ request: LiveRequestSnapshot }>(
-        `/api/live/requests/${result.request.id}/evaluate`,
-        undefined,
-        capability,
-      );
-      setSnapshot(result.request);
-      setStage(
-        result.request.state === "refused"
-          ? "Refused before payment"
-          : "Ready for artifact approval",
-      );
+      if (result.request.state === "clarification_required") {
+        setStage("One clarification required");
+        return;
+      }
+      await completeEvidencePath(result.request, capability);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Workflow failed");
+      setStage("Failed closed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function answerClarification() {
+    if (!snapshot || !requestCapability || !clarificationAnswer.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setStage("Applying clarification");
+      let result = await post<{ request: LiveRequestSnapshot }>(
+        `/api/live/requests/${snapshot.id}/clarification`,
+        { answer: clarificationAnswer },
+        requestCapability,
+      );
+      setSnapshot(result.request);
+      setStage("OpenAI re-extracting complete intent");
+      result = await post<{ request: LiveRequestSnapshot }>(
+        `/api/live/requests/${snapshot.id}/extract`,
+        undefined,
+        requestCapability,
+      );
+      setSnapshot(result.request);
+      setClarificationAnswer("");
+      if (result.request.state === "clarification_required") {
+        setStage("One more hard field is required");
+        return;
+      }
+      await completeEvidencePath(result.request, requestCapability);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Clarification failed",
+      );
       setStage("Failed closed");
     } finally {
       setBusy(false);
@@ -204,6 +250,30 @@ export function LiveConsole() {
           <p className={styles.safetyCopy}>
             Prava remains unreachable until the exact artifact is approved.
           </p>
+          {snapshot?.state === "clarification_required" &&
+          snapshot.clarification ? (
+            <div className={styles.clarificationBox}>
+              <label htmlFor="clarification-answer">
+                {snapshot.clarification.question}
+              </label>
+              <input
+                disabled={busy}
+                id="clarification-answer"
+                maxLength={500}
+                onChange={(event) => setClarificationAnswer(event.target.value)}
+                placeholder="Add only the missing purchase constraint"
+                value={clarificationAnswer}
+              />
+              <button
+                className={styles.primaryButton}
+                disabled={busy || !clarificationAnswer.trim()}
+                onClick={answerClarification}
+                type="button"
+              >
+                Continue with clarification
+              </button>
+            </div>
+          ) : null}
           {error ? <p className={styles.errorBanner}>{error}</p> : null}
         </div>
 
@@ -220,7 +290,7 @@ export function LiveConsole() {
 
           <div className={styles.grid}>
             <article className={styles.card}>
-              <p className={styles.cardOwner}>OPENAI / TYPED EXTRACTION</p>
+              <p className={styles.cardOwner}>AGENT / DISCOVER + EXTRACT</p>
               <h3>{intent?.requestedProduct ?? "Awaiting extraction"}</h3>
               <dl>
                 <div>
@@ -245,12 +315,31 @@ export function LiveConsole() {
                   <dd>{offer?.sku ?? "Awaiting merchant"}</dd>
                 </div>
                 <div>
+                  <dt>Live candidates</dt>
+                  <dd>{snapshot?.merchantCandidates.length ?? 0}</dd>
+                </div>
+                <div>
                   <dt>Budget</dt>
                   <dd>
                     {money(intent?.budgetMinor ?? null, intent?.currency)}
                   </dd>
                 </div>
               </dl>
+              {snapshot?.merchantCandidates.length ? (
+                <div className={styles.citationList}>
+                  {snapshot.merchantCandidates.map((candidate) => (
+                    <div className={styles.citation} key={candidate.sku}>
+                      <strong>{candidate.optionLabel}</strong>
+                      <span>
+                        {money(candidate.totalMinor, candidate.currency)} ·{" "}
+                        {candidate.executionEligible
+                          ? "trust-eligible"
+                          : "discovered, not executable"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </article>
 
             <article className={styles.card}>
@@ -314,7 +403,7 @@ export function LiveConsole() {
 
             <article className={styles.card}>
               <p className={styles.cardOwner}>PRAVA / PAYMENT BOUNDARY</p>
-              <h3>{snapshot?.prava?.status ?? "No session created"}</h3>
+              <h3>{snapshot?.prava?.status ?? "Prava session: not created"}</h3>
               <p>
                 {snapshot?.prava
                   ? snapshot.prava.report

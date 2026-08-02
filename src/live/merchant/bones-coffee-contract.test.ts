@@ -6,6 +6,7 @@ import type { ApprovalArtifact } from "@/live/types";
 
 import {
   BONES_COFFEE_GIFT_CARD,
+  buildBonesCoffeeDiscovery,
   buildVerifiedBonesCoffeeOffer,
   findNewBonesCoffeeDecline,
   isAllowedBonesCoffeeNavigation,
@@ -89,6 +90,39 @@ describe("Bones Coffee canonical checkout contract", () => {
       source: "merchant_product_json",
     });
     expect(offer.expiresAt).toBe("2026-07-29T00:15:00.000Z");
+  });
+
+  it("discovers live variants but marks only the policy-bound SKU executable", () => {
+    const variants = [
+      [25_933_838_657, "$10.00", 1_000, "25933838657"],
+      [25_933_838_721, "$25.00", 2_500, "25933838721"],
+      [25_933_838_785, "$50.00", 5_000, "25933838785"],
+    ].map(([id, title, price, sku]) => ({
+      available: true,
+      id,
+      price,
+      requires_shipping: false,
+      sku,
+      taxable: false,
+      title,
+    }));
+    const discovery = buildBonesCoffeeDiscovery({
+      available: true,
+      handle: BONES_COFFEE_GIFT_CARD.productHandle,
+      title: BONES_COFFEE_GIFT_CARD.productName,
+      variants,
+    });
+
+    expect(discovery.candidates).toHaveLength(3);
+    expect(
+      discovery.candidates.filter((candidate) => candidate.executionEligible),
+    ).toEqual([
+      expect.objectContaining({
+        optionLabel: "$10.00",
+        sku: BONES_COFFEE_GIFT_CARD.sku,
+      }),
+    ]);
+    expect(discovery.selectedOffer.sku).toBe(BONES_COFFEE_GIFT_CARD.sku);
   });
 
   it("fails closed when the live product price or fulfillment contract changes", () => {

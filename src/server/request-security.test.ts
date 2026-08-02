@@ -6,6 +6,7 @@ import {
   assertMatchingCapability,
   assertTrustedMutationOrigin,
   assertTrustedMutationRequest,
+  readExecutionCapability,
   readBearerCapability,
   readBoundedJson,
   resetRequestSecurityStateForTests,
@@ -48,6 +49,66 @@ describe("request security", () => {
     );
   });
 
+  it("trusts only the configured production origin and host", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_BASE_URL", "https://relaybuy.example");
+    const trusted = new Request("https://relaybuy.example/api/test", {
+      headers: {
+        host: "relaybuy.example",
+        origin: "https://relaybuy.example",
+        "sec-fetch-site": "same-origin",
+      },
+      method: "POST",
+    });
+    expect(() => assertTrustedMutationOrigin(trusted)).not.toThrow();
+
+    for (const hostile of [
+      new Request("https://attacker.example/api/test", {
+        headers: {
+          host: "attacker.example",
+          origin: "https://attacker.example",
+          "sec-fetch-site": "same-origin",
+        },
+        method: "POST",
+      }),
+      new Request("https://relaybuy.example/api/test", {
+        headers: {
+          host: "relaybuy.example",
+          origin: "https://relaybuy.example",
+          "sec-fetch-site": "same-origin",
+          "x-forwarded-host": "attacker.example",
+        },
+        method: "POST",
+      }),
+      new Request("https://relaybuy.example/api/test", {
+        headers: {
+          host: "relaybuy.example",
+          origin: "https://attacker.example",
+          "sec-fetch-site": "same-origin",
+        },
+        method: "POST",
+      }),
+    ]) {
+      expect(() => assertTrustedMutationOrigin(hostile)).toThrowError(
+        expect.objectContaining<Partial<RequestSecurityError>>({
+          code: "INVALID_ORIGIN",
+          status: 403,
+        }),
+      );
+    }
+  });
+
+  it("requires APP_BASE_URL for production mutations", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_BASE_URL", "");
+    expect(() => assertTrustedMutationOrigin(mutation())).toThrowError(
+      expect.objectContaining<Partial<RequestSecurityError>>({
+        code: "INVALID_ORIGIN",
+        status: 500,
+      }),
+    );
+  });
+
   it("checks mutation origin before authenticated work", () => {
     expect(() => assertTrustedMutationOrigin(mutation())).not.toThrow();
     expect(() =>
@@ -73,6 +134,22 @@ describe("request security", () => {
 
     expect(readBearerCapability(authorized)).toBe(`rb_req_${"a".repeat(43)}`);
     expect(() => readBearerCapability(mutation())).toThrowError(
+      expect.objectContaining<Partial<RequestSecurityError>>({
+        code: "UNAUTHORIZED",
+        status: 401,
+      }),
+    );
+  });
+
+  it("reads execution capabilities only from the HttpOnly cookie channel", () => {
+    const capability = `rb_exec_${"a".repeat(43)}`;
+    const request = mutation();
+    request.headers.set(
+      "cookie",
+      `other=value; relaybuy_execution=${capability}`,
+    );
+    expect(readExecutionCapability(request)).toBe(capability);
+    expect(() => readExecutionCapability(mutation())).toThrowError(
       expect.objectContaining<Partial<RequestSecurityError>>({
         code: "UNAUTHORIZED",
         status: 401,

@@ -14,17 +14,21 @@ import {
   approvalArtifactSchema,
   auditEventSchema,
   evidenceBundleSchema,
+  liveClarificationSchema,
   livePravaSessionSchema,
   liveRequestStateSchema,
+  merchantCandidateSchema,
   policyDecisionSchema,
   purchaseIntentSchema,
   verifiedMerchantOfferSchema,
   type ApprovalArtifact,
   type AuditEvent,
   type EvidenceBundle,
+  type LiveClarification,
   type LiveRequestSnapshot,
   type LiveRequestState,
   type LivePravaSession,
+  type MerchantCandidate,
   type PolicyDecision,
   type PurchaseIntent,
   type VerifiedMerchantOffer,
@@ -38,10 +42,12 @@ interface LiveRequestRow {
   approvalExpiresAt: Date | null;
   approvalUsedAt: Date | null;
   createdAt: Date;
+  clarification: unknown | null;
   evidence: unknown | null;
   expiresAt: Date;
   id: string;
   intent: unknown | null;
+  merchantCandidates: unknown | null;
   offer: unknown | null;
   policyDecision: unknown | null;
   prava: unknown | null;
@@ -98,6 +104,10 @@ function toJsonValue(value: unknown): JSONValue {
   return JSON.parse(JSON.stringify(value)) as JSONValue;
 }
 
+function latestProviderEvent(prava: LivePravaSession) {
+  return prava.providerEvents.at(-1) ?? null;
+}
+
 function requireUpdated(row: { version: number } | undefined): void {
   if (!row) {
     throw new LiveRepositoryError(
@@ -131,6 +141,7 @@ async function getLockedRow(
   }
   const terminalStates = new Set([
     "approval_invalidated",
+    "canceled",
     "credential_window_lost",
     "expired",
     "failed",
@@ -138,6 +149,7 @@ async function getLockedRow(
     "merchant_declined_test_card",
     "prava_terminal_observed",
     "report_failed",
+    "report_unknown",
     "reported",
     "reporting_outcome",
   ]);
@@ -215,11 +227,19 @@ async function loadSnapshotWithSql(
         createdAt: toIso(event.createdAt),
       }),
     ),
+    clarification: row.clarification
+      ? liveClarificationSchema.parse(row.clarification)
+      : null,
     createdAt: toIso(row.createdAt),
     evidence: row.evidence ? evidenceBundleSchema.parse(row.evidence) : null,
     expiresAt: toIso(row.expiresAt),
     id: row.id,
     intent: row.intent ? purchaseIntentSchema.parse(row.intent) : null,
+    merchantCandidates: Array.isArray(row.merchantCandidates)
+      ? row.merchantCandidates.map((candidate) =>
+          merchantCandidateSchema.parse(candidate),
+        )
+      : [],
     offer: row.offer ? verifiedMerchantOfferSchema.parse(row.offer) : null,
     policyDecision: row.policyDecision
       ? policyDecisionSchema.parse(row.policyDecision)
@@ -297,6 +317,7 @@ export class LiveRequestRepository {
   }
 
   async saveExtraction(input: {
+    clarification: LiveClarification | null;
     intent: PurchaseIntent;
     model: string;
     requestId: string;
@@ -305,7 +326,12 @@ export class LiveRequestRepository {
     const sql = getLiveSql();
     return sql.begin(async (transaction) => {
       const row = await getLockedRow(transaction, input.requestId);
-      const state = nextState(row, "extraction_succeeded");
+      const state = nextState(
+        row,
+        input.clarification?.answer === null
+          ? "clarification_requested"
+          : "extraction_succeeded",
+      );
       const now = new Date();
 
       await transaction`
@@ -316,7 +342,10 @@ export class LiveRequestRepository {
           ${randomUUID()}, ${input.requestId}, ${input.model}, '2026-07-29',
           ${transaction.json(input.intent)}, ${now}
         )
-        ON CONFLICT (request_id) DO NOTHING
+        ON CONFLICT (request_id) DO UPDATE
+        SET model = EXCLUDED.model, payload = EXCLUDED.payload,
+            schema_version = EXCLUDED.schema_version,
+            created_at = EXCLUDED.created_at
       `;
       const [updated] = await transaction<{ version: number }[]>`
         UPDATE relaybuy_live_requests
@@ -324,6 +353,7 @@ export class LiveRequestRepository {
           state = ${state},
           version = version + 1,
           intent = ${transaction.json(input.intent)},
+          clarification = ${input.clarification ? transaction.json(input.clarification) : null},
           updated_at = ${now}
         WHERE id = ${input.requestId} AND version = ${row.version}
         RETURNING version
@@ -332,7 +362,9 @@ export class LiveRequestRepository {
       await addAuditEvent(
         transaction,
         input.requestId,
-        "openai.extraction_succeeded",
+        input.clarification?.answer === null
+          ? "openai.clarification_requested"
+          : "openai.extraction_succeeded",
         "openai",
         {
           confidence: input.intent.confidence,
@@ -345,7 +377,59 @@ export class LiveRequestRepository {
     });
   }
 
+  async answerClarification(input: {
+    answer: string;
+    requestId: string;
+  }): Promise<LiveRequestSnapshot> {
+    await ensureLiveSchema();
+    const sql = getLiveSql();
+    return sql.begin(async (transaction) => {
+      const row = await getLockedRow(transaction, input.requestId);
+      if (row.state !== "clarification_required" || !row.clarification) {
+        throw new LiveRepositoryError(
+          "CONFLICT",
+          "This request is not waiting for clarification",
+        );
+      }
+      const clarification = liveClarificationSchema.parse(row.clarification);
+      if (clarification.answer !== null) {
+        throw new LiveRepositoryError(
+          "CONFLICT",
+          "This clarification has already been answered",
+        );
+      }
+      const now = new Date();
+      const state = nextState(row, "clarification_answered");
+      const answeredClarification = liveClarificationSchema.parse({
+        ...clarification,
+        answer: input.answer,
+        answeredAt: now.toISOString(),
+      });
+      const [updated] = await transaction<{ version: number }[]>`
+        UPDATE relaybuy_live_requests
+        SET state = ${state}, version = version + 1,
+            request_text = ${`${row.requestText}\n\nUser clarification:\n${input.answer}`},
+            clarification = ${transaction.json(answeredClarification)},
+            intent = NULL, offer = NULL, evidence = NULL,
+            policy_decision = NULL, updated_at = ${now}
+        WHERE id = ${input.requestId} AND version = ${row.version}
+        RETURNING version
+      `;
+      requireUpdated(updated);
+      await addAuditEvent(
+        transaction,
+        input.requestId,
+        "request.clarification_answered",
+        "user",
+        { missingFields: clarification.missingFields },
+        now,
+      );
+      return loadSnapshotWithSql(transaction, input.requestId);
+    });
+  }
+
   async saveEvidence(input: {
+    candidates: MerchantCandidate[];
     evidence: EvidenceBundle;
     offer: VerifiedMerchantOffer;
     requestId: string;
@@ -362,18 +446,18 @@ export class LiveRequestRepository {
         for (const citation of search.citations) {
           await transaction`
             INSERT INTO relaybuy_live_evidence_items (
-              id, request_id, kind, query, answer, title, chunk_text,
+              id, external_citation_id, request_id, kind, query, answer, title, chunk_text,
               score, rank, content_id, version_id, chunk_index,
               source_type, created_at
             )
             VALUES (
-              ${citation.id}, ${input.requestId}, ${search.kind},
+              ${randomUUID()}, ${citation.id}, ${input.requestId}, ${search.kind},
               ${search.query}, ${search.answer}, ${citation.title},
               ${citation.chunkText}, ${citation.score}, ${citation.rank},
               ${citation.contentId}, ${citation.versionId},
               ${citation.chunkIndex}, ${citation.sourceType}, ${now}
             )
-            ON CONFLICT (id) DO NOTHING
+            ON CONFLICT (request_id, kind, external_citation_id) DO NOTHING
           `;
         }
       }
@@ -384,6 +468,7 @@ export class LiveRequestRepository {
           state = ${state},
           version = version + 1,
           evidence = ${transaction.json(input.evidence)},
+          merchant_candidates = ${transaction.json(input.candidates)},
           offer = ${transaction.json(input.offer)},
           updated_at = ${now}
         WHERE id = ${input.requestId} AND version = ${row.version}
@@ -481,7 +566,7 @@ export class LiveRequestRepository {
         );
       }
       const now = new Date();
-      await transaction`
+      const [issued] = await transaction<{ id: string }[]>`
         INSERT INTO relaybuy_live_approval_artifacts (
           id, request_id, artifact, artifact_hash, token_hash,
           status, expires_at, created_at
@@ -491,7 +576,25 @@ export class LiveRequestRepository {
           ${transaction.json(input.artifact)}, ${input.artifactHash},
           ${input.tokenHash}, 'pending', ${input.expiresAt}, ${now}
         )
+        ON CONFLICT (request_id) DO UPDATE
+        SET
+          artifact = EXCLUDED.artifact,
+          artifact_hash = EXCLUDED.artifact_hash,
+          token_hash = EXCLUDED.token_hash,
+          status = 'pending',
+          expires_at = EXCLUDED.expires_at,
+          used_at = NULL,
+          created_at = EXCLUDED.created_at
+        WHERE relaybuy_live_approval_artifacts.used_at IS NULL
+          AND relaybuy_live_approval_artifacts.status IN ('pending', 'expired', 'rejected')
+        RETURNING id
       `;
+      if (!issued) {
+        throw new LiveRepositoryError(
+          "CONFLICT",
+          "The approved artifact has already been consumed",
+        );
+      }
       const [updated] = await transaction<{ version: number }[]>`
         UPDATE relaybuy_live_requests
         SET
@@ -508,7 +611,7 @@ export class LiveRequestRepository {
       await addAuditEvent(
         transaction,
         input.requestId,
-        "approval.issued",
+        row.approvalArtifactHash ? "approval.reissued" : "approval.issued",
         "system",
         {
           artifactHash: input.artifactHash,
@@ -536,14 +639,38 @@ export class LiveRequestRepository {
     return loadSnapshotWithSql(sql, row.id);
   }
 
-  async consumeApproval(tokenHash: string): Promise<LiveRequestSnapshot> {
+  async getByExecutionTokenHash(
+    tokenHash: string,
+  ): Promise<LiveRequestSnapshot> {
+    await ensureLiveSchema();
+    const sql = getLiveSql();
+    const [row] = await sql<{ id: string }[]>`
+      SELECT id
+      FROM relaybuy_live_requests
+      WHERE execution_token_hash = ${tokenHash}
+        AND execution_expires_at > NOW()
+    `;
+    if (!row) {
+      throw new LiveRepositoryError(
+        "NOT_FOUND",
+        "Execution capability not found",
+      );
+    }
+    return loadSnapshotWithSql(sql, row.id);
+  }
+
+  async consumeApproval(input: {
+    executionExpiresAt: Date;
+    executionTokenHash: string;
+    tokenHash: string;
+  }): Promise<LiveRequestSnapshot> {
     await ensureLiveSchema();
     const sql = getLiveSql();
     return sql.begin(async (transaction) => {
       const [found] = await transaction<LiveRequestRow[]>`
         SELECT *
         FROM relaybuy_live_requests
-        WHERE approval_token_hash = ${tokenHash}
+        WHERE approval_token_hash = ${input.tokenHash}
         FOR UPDATE
       `;
       if (!found) {
@@ -570,6 +697,9 @@ export class LiveRequestRepository {
           state = ${state},
           version = version + 1,
           approval_used_at = ${now},
+          approval_token_hash = NULL,
+          execution_token_hash = ${input.executionTokenHash},
+          execution_expires_at = ${input.executionExpiresAt},
           updated_at = ${now}
         WHERE id = ${found.id} AND version = ${found.version}
         RETURNING version
@@ -578,12 +708,57 @@ export class LiveRequestRepository {
       await transaction`
         UPDATE relaybuy_live_approval_artifacts
         SET status = 'approved', used_at = ${now}
-        WHERE request_id = ${found.id} AND token_hash = ${tokenHash}
+        WHERE request_id = ${found.id} AND token_hash = ${input.tokenHash}
       `;
       await addAuditEvent(
         transaction,
         found.id,
         "approval.consumed",
+        "user",
+        {
+          artifactHash: found.approvalArtifactHash,
+          executionExpiresAt: input.executionExpiresAt.toISOString(),
+        },
+        now,
+      );
+      return loadSnapshotWithSql(transaction, found.id);
+    });
+  }
+
+  async rejectApproval(tokenHash: string): Promise<LiveRequestSnapshot> {
+    await ensureLiveSchema();
+    const sql = getLiveSql();
+    return sql.begin(async (transaction) => {
+      const [found] = await transaction<LiveRequestRow[]>`
+        SELECT * FROM relaybuy_live_requests
+        WHERE approval_token_hash = ${tokenHash}
+        FOR UPDATE
+      `;
+      if (!found) {
+        throw new LiveRepositoryError("NOT_FOUND", "Approval link not found");
+      }
+      if (found.approvalUsedAt) {
+        throw new LiveRepositoryError("TOKEN_USED", "Approval already used");
+      }
+      const now = new Date();
+      const state = nextState(found, "approval_rejected");
+      const [updated] = await transaction<{ version: number }[]>`
+        UPDATE relaybuy_live_requests
+        SET state = ${state}, version = version + 1,
+            approval_token_hash = NULL, updated_at = ${now}
+        WHERE id = ${found.id} AND version = ${found.version}
+        RETURNING version
+      `;
+      requireUpdated(updated);
+      await transaction`
+        UPDATE relaybuy_live_approval_artifacts
+        SET status = 'rejected', used_at = ${now}
+        WHERE request_id = ${found.id} AND token_hash = ${tokenHash}
+      `;
+      await addAuditEvent(
+        transaction,
+        found.id,
+        "approval.rejected",
         "user",
         { artifactHash: found.approvalArtifactHash },
         now,
@@ -731,42 +906,9 @@ export class LiveRequestRepository {
     });
   }
 
-  async markPravaSessionOperationUnknown(
-    requestId: string,
-  ): Promise<LiveRequestSnapshot> {
-    await ensureLiveSchema();
-    const sql = getLiveSql();
-    return sql.begin(async (transaction) => {
-      const row = await getLockedRow(transaction, requestId);
-      const now = new Date();
-      const [operation] = await transaction<{ id: string }[]>`
-        UPDATE relaybuy_prava_session_operations
-        SET status = 'unknown', updated_at = ${now}
-        WHERE request_id = ${requestId} AND status = 'creating'
-        RETURNING id
-      `;
-      requireOperationUpdated(operation);
-      const [updated] = await transaction<{ version: number }[]>`
-        UPDATE relaybuy_live_requests
-        SET version = version + 1, updated_at = ${now}
-        WHERE id = ${requestId} AND version = ${row.version}
-        RETURNING version
-      `;
-      requireUpdated(updated);
-      await addAuditEvent(
-        transaction,
-        requestId,
-        "prava.session_creation_unknown",
-        "system",
-        {},
-        now,
-      );
-      return loadSnapshotWithSql(transaction, requestId);
-    });
-  }
-
-  async markPravaSessionOperationFailed(input: {
+  async markPravaSessionOperationUnknown(input: {
     requestId: string;
+    responseId?: string;
     status?: number;
     vendorCode?: string;
   }): Promise<LiveRequestSnapshot> {
@@ -777,7 +919,52 @@ export class LiveRequestRepository {
       const now = new Date();
       const [operation] = await transaction<{ id: string }[]>`
         UPDATE relaybuy_prava_session_operations
-        SET status = 'failed', updated_at = ${now}
+        SET status = 'unknown', response_id = ${input.responseId ?? null},
+            http_status = ${input.status ?? null},
+            vendor_code = ${input.vendorCode ?? null}, updated_at = ${now}
+        WHERE request_id = ${input.requestId} AND status = 'creating'
+        RETURNING id
+      `;
+      requireOperationUpdated(operation);
+      const [updated] = await transaction<{ version: number }[]>`
+        UPDATE relaybuy_live_requests
+        SET version = version + 1, updated_at = ${now}
+        WHERE id = ${input.requestId} AND version = ${row.version}
+        RETURNING version
+      `;
+      requireUpdated(updated);
+      await addAuditEvent(
+        transaction,
+        input.requestId,
+        "prava.session_creation_unknown",
+        "system",
+        {
+          ...(input.responseId ? { responseId: input.responseId } : {}),
+          ...(input.status === undefined ? {} : { status: input.status }),
+          ...(input.vendorCode ? { vendorCode: input.vendorCode } : {}),
+        },
+        now,
+      );
+      return loadSnapshotWithSql(transaction, input.requestId);
+    });
+  }
+
+  async markPravaSessionOperationFailed(input: {
+    requestId: string;
+    responseId?: string;
+    status?: number;
+    vendorCode?: string;
+  }): Promise<LiveRequestSnapshot> {
+    await ensureLiveSchema();
+    const sql = getLiveSql();
+    return sql.begin(async (transaction) => {
+      const row = await getLockedRow(transaction, input.requestId);
+      const now = new Date();
+      const [operation] = await transaction<{ id: string }[]>`
+        UPDATE relaybuy_prava_session_operations
+        SET status = 'failed', response_id = ${input.responseId ?? null},
+            http_status = ${input.status ?? null},
+            vendor_code = ${input.vendorCode ?? null}, updated_at = ${now}
         WHERE request_id = ${input.requestId} AND status = 'creating'
         RETURNING id
       `;
@@ -796,6 +983,9 @@ export class LiveRequestRepository {
         "prava",
         {
           ...(input.status === undefined ? {} : { status: input.status }),
+          ...(input.responseId === undefined
+            ? {}
+            : { responseId: input.responseId }),
           ...(input.vendorCode === undefined
             ? {}
             : { vendorCode: input.vendorCode }),
@@ -807,6 +997,7 @@ export class LiveRequestRepository {
   }
 
   async savePravaSession(input: {
+    expectedVersion: number;
     prava: LivePravaSession;
     requestId: string;
   }): Promise<LiveRequestSnapshot> {
@@ -814,6 +1005,12 @@ export class LiveRequestRepository {
     const sql = getLiveSql();
     return sql.begin(async (transaction) => {
       const row = await getLockedRow(transaction, input.requestId);
+      if (row.version !== input.expectedVersion) {
+        throw new LiveRepositoryError(
+          "CONFLICT",
+          "The Prava session snapshot changed concurrently",
+        );
+      }
       const state = nextState(row, "prava_session_created");
       const now = new Date();
       const [updated] = await transaction<{ version: number }[]>`
@@ -843,6 +1040,7 @@ export class LiveRequestRepository {
           claim: input.prava.claim,
           expiresAt: input.prava.expiresAt,
           mode: input.prava.mode,
+          providerResponse: latestProviderEvent(input.prava),
         },
         now,
       );
@@ -937,6 +1135,7 @@ export class LiveRequestRepository {
   }
 
   async completeOutcomeReport(input: {
+    expectedVersion: number;
     prava: LivePravaSession;
     requestId: string;
   }): Promise<LiveRequestSnapshot> {
@@ -944,6 +1143,12 @@ export class LiveRequestRepository {
     const sql = getLiveSql();
     return sql.begin(async (transaction) => {
       const row = await getLockedRow(transaction, input.requestId);
+      if (row.version !== input.expectedVersion) {
+        throw new LiveRepositoryError(
+          "CONFLICT",
+          "The outcome report snapshot changed concurrently",
+        );
+      }
       const state = nextState(row, "prava_reported");
       const now = new Date();
       const [operation] = await transaction<{ id: string }[]>`
@@ -970,6 +1175,76 @@ export class LiveRequestRepository {
         {
           txnStatus: input.prava.report?.txnStatus,
           visaConfirmation: input.prava.report?.visaConfirmation,
+          providerResponse: latestProviderEvent(input.prava),
+        },
+        now,
+      );
+      return loadSnapshotWithSql(transaction, input.requestId);
+    });
+  }
+
+  async failOutcomeReport(input: {
+    expectedVersion: number;
+    failureStatus: "report_failed" | "report_unknown";
+    requestId: string;
+    responseId?: string;
+    status?: number;
+    vendorCode?: string;
+  }): Promise<LiveRequestSnapshot> {
+    await ensureLiveSchema();
+    const sql = getLiveSql();
+    return sql.begin(async (transaction) => {
+      const row = await getLockedRow(transaction, input.requestId);
+      if (row.version !== input.expectedVersion) {
+        throw new LiveRepositoryError(
+          "CONFLICT",
+          "The outcome report snapshot changed concurrently",
+        );
+      }
+      const currentPrava = livePravaSessionSchema.parse(row.prava);
+      const event =
+        input.failureStatus === "report_unknown"
+          ? "prava_report_unknown"
+          : "prava_report_failed";
+      const state = nextState(row, event);
+      const now = new Date();
+      const [operation] = await transaction<{ id: string }[]>`
+        UPDATE relaybuy_prava_outcome_reports
+        SET status = ${input.failureStatus}, updated_at = ${now}
+        WHERE request_id = ${input.requestId} AND status = 'reporting'
+        RETURNING id
+      `;
+      requireOperationUpdated(operation);
+      const prava = livePravaSessionSchema.parse({
+        ...currentPrava,
+        credentialsReady: false,
+        reportOperation: {
+          ...currentPrava.reportOperation!,
+          status: input.failureStatus,
+          updatedAt: now.toISOString(),
+        },
+        updatedAt: now.toISOString(),
+      });
+      const [updated] = await transaction<{ version: number }[]>`
+        UPDATE relaybuy_live_requests
+        SET state = ${state}, version = version + 1,
+            prava = ${transaction.json(toJsonValue(prava))},
+            updated_at = ${now}
+        WHERE id = ${input.requestId} AND version = ${row.version}
+        RETURNING version
+      `;
+      requireUpdated(updated);
+      await addAuditEvent(
+        transaction,
+        input.requestId,
+        input.failureStatus === "report_unknown"
+          ? "prava.outcome_report_unknown"
+          : "prava.outcome_report_failed",
+        "prava",
+        {
+          ...(input.responseId ? { responseId: input.responseId } : {}),
+          ...(input.status === undefined ? {} : { status: input.status }),
+          ...(input.vendorCode ? { vendorCode: input.vendorCode } : {}),
         },
         now,
       );
@@ -979,6 +1254,7 @@ export class LiveRequestRepository {
 
   async savePravaReconciliation(input: {
     event: LiveWorkflowEvent | null;
+    expectedVersion: number;
     prava: LivePravaSession;
     requestId: string;
   }): Promise<LiveRequestSnapshot> {
@@ -986,6 +1262,12 @@ export class LiveRequestRepository {
     const sql = getLiveSql();
     return sql.begin(async (transaction) => {
       const row = await getLockedRow(transaction, input.requestId);
+      if (row.version !== input.expectedVersion) {
+        throw new LiveRepositoryError(
+          "CONFLICT",
+          "The Prava reconciliation snapshot changed concurrently",
+        );
+      }
       const state = input.event
         ? nextState(row, input.event)
         : liveRequestStateSchema.parse(row.state);
@@ -1008,6 +1290,7 @@ export class LiveRequestRepository {
         "prava",
         {
           credentialsReady: input.prava.credentialsReady,
+          providerResponse: latestProviderEvent(input.prava),
           status: input.prava.status,
           txnRefId: input.prava.txnRefId,
         },

@@ -84,6 +84,11 @@ describe("PravaSandboxGateway", () => {
       status: "ok",
       timestamp: "2026-08-01T02:00:00.000Z",
     });
+    expect(gateway.lastResponseMeta).toMatchObject({
+      operation: "health",
+      responseId: null,
+      status: 200,
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://sandbox.api.prava.space/health",
       expect.objectContaining({ method: "GET" }),
@@ -198,6 +203,50 @@ describe("PravaSandboxGateway", () => {
     expect(JSON.stringify(outcome)).not.toMatch(
       /4111111111111111|dynamic_cvv|123|expiry_month/,
     );
+  });
+
+  it("revokes an active sealed session without exposing its session id", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            session_id: "ses_test_revoke",
+            session_token: "sensitive-session-jwt",
+            iframe_url: "https://checkout.prava.space/s/ses_test_revoke",
+            order_id: "internal-order-example",
+            expires_at: "2026-08-01T02:15:00.000Z",
+          }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "x-response-id": "revoke-response-id",
+          },
+        }),
+      );
+    const gateway = new PravaSandboxGateway({
+      secretKey: "sk_test_redacted_for_unit_test",
+      fetch: fetchMock,
+    });
+    const session = await gateway.createSession(sessionInput);
+
+    await expect(
+      gateway.revokeSession(session.redactedSessionRef),
+    ).resolves.toEqual({ success: true });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "https://sandbox.api.prava.space/v1/sessions/ses_test_revoke/revoke",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(gateway.lastResponseMeta).toMatchObject({
+      operation: "revoke_session",
+      responseId: "revoke-response-id",
+      status: 200,
+    });
   });
 
   it("keeps credentials server-side and reports the matching outcome", async () => {

@@ -108,6 +108,10 @@ const reportStatusResponseSchema = z
   })
   .passthrough();
 
+const revokeSessionResponseSchema = z
+  .object({ success: z.literal(true) })
+  .passthrough();
+
 const sessionInputSchema = z
   .object({
     userId: z.string().min(1).max(255),
@@ -176,12 +180,27 @@ export class PravaSandboxGatewayError extends Error {
       status?: number;
       responseId?: string;
       vendorCode?: string;
+      startedAt?: string;
+      finishedAt?: string;
     } = {},
     options?: ErrorOptions,
   ) {
     super(message, options);
     this.name = "PravaSandboxGatewayError";
   }
+}
+
+export interface PravaProviderResponseMeta {
+  finishedAt: string;
+  operation:
+    | "create_session"
+    | "health"
+    | "payment_result"
+    | "report_status"
+    | "revoke_session";
+  responseId: string | null;
+  startedAt: string;
+  status: number;
 }
 
 export type PravaSessionCreateFailureDisposition =
@@ -226,6 +245,7 @@ export class PravaSandboxGateway {
   readonly #fetch: typeof fetch;
   readonly #referenceKey: Buffer;
   readonly #requestTimeoutMs: number;
+  #lastResponseMeta: PravaProviderResponseMeta | null = null;
 
   constructor(options: PravaSandboxGatewayOptions) {
     if (!options.secretKey.startsWith("sk_test_")) {
@@ -253,8 +273,12 @@ export class PravaSandboxGateway {
       .digest();
   }
 
+  get lastResponseMeta(): PravaProviderResponseMeta | null {
+    return this.#lastResponseMeta;
+  }
+
   async health(): Promise<{ status: "ok"; timestamp: string }> {
-    const payload = await this.#request("/health", { method: "GET" });
+    const payload = await this.#request("/health", { method: "GET" }, "health");
     return this.#parseVendorResponse(healthResponseSchema, payload);
   }
 
@@ -277,36 +301,40 @@ export class PravaSandboxGateway {
     }
 
     const validInput = parsedInput.data;
-    const payload = await this.#request("/v1/sessions", {
-      method: "POST",
-      body: JSON.stringify({
-        user_id: validInput.userId,
-        user_email: validInput.userEmail,
-        total_amount: decimalAmount(validInput.total),
-        currency: validInput.total.currency,
-        external_order_ref: validInput.externalOrderRef,
-        description: validInput.product.description,
-        integration_type: "full_checkout",
-        purchase_context: [
-          {
-            merchant_details: {
-              name: validInput.merchant.name,
-              url: validInput.merchant.url,
-              country_code_iso2: validInput.merchant.countryCode,
-            },
-            product_details: [
-              {
-                description: validInput.product.description,
-                product_id: validInput.product.productId,
-                unit_price: decimalAmount(validInput.product.unitPrice),
-                quantity: validInput.product.quantity,
+    const payload = await this.#request(
+      "/v1/sessions",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: validInput.userId,
+          user_email: validInput.userEmail,
+          total_amount: decimalAmount(validInput.total),
+          currency: validInput.total.currency,
+          external_order_ref: validInput.externalOrderRef,
+          description: validInput.product.description,
+          integration_type: "full_checkout",
+          purchase_context: [
+            {
+              merchant_details: {
+                name: validInput.merchant.name,
+                url: validInput.merchant.url,
+                country_code_iso2: validInput.merchant.countryCode,
               },
-            ],
-            effective_until_minutes: 15,
-          },
-        ],
-      }),
-    });
+              product_details: [
+                {
+                  description: validInput.product.description,
+                  product_id: validInput.product.productId,
+                  unit_price: decimalAmount(validInput.product.unitPrice),
+                  quantity: validInput.product.quantity,
+                },
+              ],
+              effective_until_minutes: 15,
+            },
+          ],
+        }),
+      },
+      "create_session",
+    );
     const session = this.#parseVendorResponse(
       createSessionResponseSchema,
       payload,
@@ -353,6 +381,7 @@ export class PravaSandboxGateway {
     const payload = await this.#request(
       `/v1/sessions/${encodeURIComponent(sessionId)}/payment-result?_t=${Date.now()}`,
       { method: "GET" },
+      "payment_result",
     );
     const result = this.#parseVendorResponse(
       paymentResultResponseSchema,
@@ -440,6 +469,7 @@ export class PravaSandboxGateway {
             : {}),
         }),
       },
+      "report_status",
     );
     const result = this.#parseVendorResponse(
       reportStatusResponseSchema,
@@ -462,8 +492,23 @@ export class PravaSandboxGateway {
     };
   }
 
-  async #request(path: string, init: RequestInit): Promise<unknown> {
+  async revokeSession(redactedSessionRef: string): Promise<{ success: true }> {
+    const sessionId = this.#openSessionReference(redactedSessionRef);
+    const payload = await this.#request(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/revoke`,
+      { method: "POST" },
+      "revoke_session",
+    );
+    return this.#parseVendorResponse(revokeSessionResponseSchema, payload);
+  }
+
+  async #request(
+    path: string,
+    init: RequestInit,
+    operation: PravaProviderResponseMeta["operation"],
+  ): Promise<unknown> {
     let response: Response;
+    const startedAt = new Date().toISOString();
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
@@ -487,7 +532,7 @@ export class PravaSandboxGateway {
         throw new PravaSandboxGatewayError(
           "VENDOR_REQUEST_TIMEOUT",
           "The Prava sandbox request timed out with an unknown remote outcome",
-          {},
+          { startedAt, finishedAt: new Date().toISOString() },
           { cause: error },
         );
       }
@@ -495,15 +540,24 @@ export class PravaSandboxGateway {
       throw new PravaSandboxGatewayError(
         "VENDOR_REQUEST_FAILED",
         "The Prava sandbox request could not be completed",
-        {},
+        { startedAt, finishedAt: new Date().toISOString() },
         { cause: error },
       );
     } finally {
       clearTimeout(timeout);
     }
 
+    const finishedAt = new Date().toISOString();
+    const responseId = response.headers.get("x-response-id");
+    this.#lastResponseMeta = {
+      finishedAt,
+      operation,
+      responseId,
+      startedAt,
+      status: response.status,
+    };
+
     if (!response.ok) {
-      const responseId = response.headers.get("x-response-id") ?? undefined;
       const vendorPayload = await response
         .clone()
         .json()
@@ -521,6 +575,8 @@ export class PravaSandboxGateway {
         {
           status: response.status,
           ...(responseId ? { responseId } : {}),
+          startedAt,
+          finishedAt,
           ...(vendorCode.success
             ? { vendorCode: vendorCode.data.error.code }
             : {}),

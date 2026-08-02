@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { chromium } from "playwright";
+import { chromium, type Frame } from "playwright";
 import { z } from "zod";
 
 import type { PravaEphemeralCredentials } from "@/integrations/prava/sandbox-gateway";
@@ -12,6 +12,7 @@ import {
   BONES_COFFEE_GIFT_CARD,
   type BonesCoffeeDeclineCode,
   buildVerifiedBonesCoffeeOffer,
+  buildBonesCoffeeDiscovery,
   findNewBonesCoffeeDecline,
   isAllowedBonesCoffeeNavigation,
   isAllowedShopifyPaymentFrame,
@@ -138,6 +139,33 @@ export async function inspectBonesCoffeeOffer(
   }
 }
 
+export async function inspectBonesCoffeeDiscovery(fetchImpl = fetch) {
+  const response = await fetchImpl(
+    `${BONES_COFFEE_GIFT_CARD.productUrl}.js?_=${Date.now()}`,
+    {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!response.ok || response.status >= 300) {
+    throw new BonesCoffeeCheckoutError(
+      "LIVE_PRODUCT_CHANGED",
+      `Merchant product lookup failed with status ${response.status}`,
+    );
+  }
+  try {
+    return buildBonesCoffeeDiscovery(await response.json());
+  } catch (error) {
+    throw new BonesCoffeeCheckoutError(
+      "LIVE_PRODUCT_CHANGED",
+      "The live merchant discovery feed changed",
+      { cause: error },
+    );
+  }
+}
+
 export async function attemptBonesCoffeeCheckout(input: {
   artifact: ApprovalArtifact;
   credentials: PravaEphemeralCredentials;
@@ -160,6 +188,17 @@ export async function attemptBonesCoffeeCheckout(input: {
       serviceWorkers: "block",
     });
     const page = await context.newPage();
+    let paymentFrameViolation = false;
+    const paymentFrames: Frame[] = [];
+    page.on("framenavigated", (frame) => {
+      if (
+        frame.name().startsWith("card-fields-") &&
+        frame.url() !== "about:blank" &&
+        !isAllowedShopifyPaymentFrame(frame.url())
+      ) {
+        paymentFrameViolation = true;
+      }
+    });
     context.on("page", (unexpectedPage) => {
       if (unexpectedPage !== page) {
         void unexpectedPage.close();
@@ -227,16 +266,38 @@ export async function attemptBonesCoffeeCheckout(input: {
     ] as const;
     for (const selector of paymentFrameSelectors) {
       const frames = page.locator(selector);
+      const frameElement = await frames.elementHandle();
+      const contentFrame = await frameElement?.contentFrame();
       if (
         (await frames.count()) !== 1 ||
-        !isAllowedShopifyPaymentFrame((await frames.getAttribute("src")) ?? "")
+        !isAllowedShopifyPaymentFrame(
+          (await frames.getAttribute("src")) ?? "",
+        ) ||
+        !contentFrame ||
+        !isAllowedShopifyPaymentFrame(contentFrame.url())
       ) {
         throw new BonesCoffeeCheckoutError(
           "MERCHANT_DOM_CHANGED",
           "The Shopify payment frame origin was not allowlisted",
         );
       }
+      paymentFrames.push(contentFrame);
     }
+
+    const assertPaymentFramesStillAllowed = () => {
+      if (
+        paymentFrameViolation ||
+        paymentFrames.some(
+          (frame) => !isAllowedShopifyPaymentFrame(frame.url()),
+        )
+      ) {
+        throw new BonesCoffeeCheckoutError(
+          "MERCHANT_DOM_CHANGED",
+          "A Shopify payment frame navigated outside the allowlist",
+        );
+      }
+    };
+    assertPaymentFramesStillAllowed();
 
     await page
       .locator('input[autocomplete="billing email"]')
@@ -292,6 +353,7 @@ export async function attemptBonesCoffeeCheckout(input: {
       .locator('input[name="name"]')
       .fill(profile.cardholderName);
 
+    assertPaymentFramesStillAllowed();
     const beforeSubmitText = await page.locator("body").innerText();
     await page.getByRole("button", { name: /^Pay now$/i }).click();
     await page

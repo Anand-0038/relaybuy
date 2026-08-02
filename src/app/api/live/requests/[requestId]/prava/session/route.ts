@@ -1,5 +1,5 @@
 import {
-  authorizeLiveApprovalCapability,
+  authorizeLiveExecutionCapability,
   createLivePravaSession,
   liveRouteError,
 } from "@/live/service";
@@ -7,7 +7,7 @@ import {
   assertCapabilityRateLimit,
   assertTrustedMutationOrigin,
   privateResponseHeaders,
-  readBearerCapability,
+  readExecutionCapability,
 } from "@/server/request-security";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +19,9 @@ export async function POST(
 ): Promise<Response> {
   try {
     assertTrustedMutationOrigin(request);
-    const capability = readBearerCapability(request);
+    const capability = readExecutionCapability(request);
     const { requestId } = await context.params;
-    await authorizeLiveApprovalCapability(requestId, capability);
+    await authorizeLiveExecutionCapability(requestId, capability);
     assertCapabilityRateLimit(request, capability, { rateLimit: 6 });
     return Response.json(
       { request: await createLivePravaSession(requestId) },

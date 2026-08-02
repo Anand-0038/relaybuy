@@ -160,9 +160,17 @@ describe("outcome report persistence", () => {
       "unknown remote outcome",
     );
     expect(mocks.reportStatus).toHaveBeenCalledOnce();
-    expect(mocks.failOutcomeReport).not.toHaveBeenCalled();
+    expect(mocks.failOutcomeReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failureStatus: "report_unknown",
+        requestId,
+      }),
+    );
 
-    mocks.getById.mockResolvedValue(reporting);
+    mocks.getById.mockResolvedValue({
+      ...reporting,
+      state: "report_unknown",
+    });
     mocks.getPaymentMaterial.mockResolvedValue({
       credentials: null,
       status: "awaiting_result",
@@ -173,6 +181,6 @@ describe("outcome report persistence", () => {
       "must be reconciled",
     );
     expect(mocks.reportStatus).toHaveBeenCalledOnce();
-    expect(mocks.failOutcomeReport).not.toHaveBeenCalled();
+    expect(mocks.failOutcomeReport).toHaveBeenCalledOnce();
   });
 });

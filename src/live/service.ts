@@ -11,6 +11,7 @@ import {
   classifyPravaSessionCreateFailure,
   PravaSandboxGateway,
   PravaSandboxGatewayError,
+  type PravaProviderResponseMeta,
 } from "@/integrations/prava/sandbox-gateway";
 import {
   RequestSecurityError,
@@ -23,12 +24,14 @@ import {
   hashApprovalArtifact,
   hashApprovalToken,
   issueApprovalToken,
+  issueExecutionToken,
   issueRequestToken,
 } from "./artifact";
 import { getLiveEnvironment } from "./env";
 import {
   attemptBonesCoffeeCheckout,
   BonesCoffeeCheckoutError,
+  inspectBonesCoffeeDiscovery,
   inspectBonesCoffeeOffer,
 } from "./merchant/bones-coffee";
 import {
@@ -46,17 +49,83 @@ import { resolvePurchaseEvidence } from "./senso";
 import {
   createLiveRequestInputSchema,
   type CreateLiveRequestInput,
+  type LiveClarification,
   type LiveRequestSnapshot,
 } from "./types";
 
 const requestIdSchema = z.uuid();
 const approvalTokenSchema = z.string().min(32).max(256);
+const executionTokenSchema = z.string().regex(/^rb_exec_[A-Za-z0-9_-]{43}$/);
 const requestTokenSchema = z.string().regex(/^rb_req_[A-Za-z0-9_-]{43}$/);
+const clarificationAnswerSchema = z.string().trim().min(1).max(500);
 const repository = new LiveRequestRepository();
 const merchantExecutions = new Map<string, Promise<LiveRequestSnapshot>>();
 
 function isPravaTerminalStatus(status: string): boolean {
   return status === "completed" || status === "failed";
+}
+
+function appendProviderEvent(
+  session: NonNullable<LiveRequestSnapshot["prava"]>,
+  event: PravaProviderResponseMeta | null,
+): NonNullable<LiveRequestSnapshot["prava"]> {
+  if (!event) return session;
+  return {
+    ...session,
+    providerEvents: [...session.providerEvents, event].slice(-50),
+  };
+}
+
+function classifyOutcomeReportFailure(
+  error: unknown,
+): "report_failed" | "report_unknown" {
+  if (!(error instanceof PravaSandboxGatewayError)) {
+    return error instanceof LiveRepositoryError
+      ? "report_failed"
+      : "report_unknown";
+  }
+  if (
+    error.code === "VENDOR_REQUEST_FAILED" &&
+    error.details.status !== undefined &&
+    error.details.status >= 400 &&
+    error.details.status < 500 &&
+    error.details.vendorCode !== "INVALID_STATE"
+  ) {
+    return "report_failed";
+  }
+  return "report_unknown";
+}
+
+function createClarification(
+  intent: LiveRequestSnapshot["intent"],
+): LiveClarification | null {
+  if (!intent) return null;
+  const missingFields = [
+    ...new Set([
+      ...intent.missingFields,
+      ...(intent.requestedProduct ? [] : ["requestedProduct"]),
+      ...(intent.requestedColor ? [] : ["requestedColor"]),
+      ...(intent.requestedSize ? [] : ["requestedSize"]),
+      ...(intent.budgetMinor === null ? ["budgetMinor"] : []),
+    ]),
+  ];
+  if (missingFields.length === 0) return null;
+  const labels: Record<string, string> = {
+    budgetMinor: "maximum budget and currency",
+    currency: "currency",
+    quantity: "quantity",
+    requestedColor: "exact denomination or primary option",
+    requestedProduct: "product",
+    requestedSize: "delivery format or secondary option",
+  };
+  const requested = missingFields.map((field) => labels[field] ?? field);
+  return {
+    answer: null,
+    answeredAt: null,
+    askedAt: new Date().toISOString(),
+    missingFields,
+    question: `What ${requested.join(", ")} should RelayBuy use?`,
+  };
 }
 
 function getPravaGateway(): PravaSandboxGateway {
@@ -123,20 +192,20 @@ export async function authorizeLiveRequestCapability(
   return request;
 }
 
-export async function authorizeLiveApprovalCapability(
+export async function authorizeLiveExecutionCapability(
   requestId: string,
   token: string,
 ): Promise<LiveRequestSnapshot> {
   const id = requestIdSchema.safeParse(requestId);
-  const parsed = approvalTokenSchema.safeParse(token);
+  const parsed = executionTokenSchema.safeParse(token);
   if (!id.success || !parsed.success) {
     throw new LiveRepositoryError(
       "UNAUTHORIZED",
-      "A valid approval capability is required",
+      "A valid execution capability is required",
     );
   }
   const { APPROVAL_TOKEN_PEPPER } = getLiveEnvironment();
-  const request = await repository.getByApprovalTokenHash(
+  const request = await repository.getByExecutionTokenHash(
     hashApprovalToken(parsed.data, APPROVAL_TOKEN_PEPPER),
   );
   if (request.id !== id.data || !request.approval?.approvedAt) {
@@ -157,10 +226,22 @@ export async function extractLiveRequest(
   const id = requestIdSchema.parse(requestId);
   const request = await repository.getById(id);
   const extraction = await extractPurchaseIntent(request.requestText);
+  const clarification = createClarification(extraction.intent);
   return repository.saveExtraction({
+    clarification: clarification ?? request.clarification,
     intent: extraction.intent,
     model: extraction.model,
     requestId: id,
+  });
+}
+
+export async function answerLiveRequestClarification(
+  requestId: string,
+  answer: string,
+): Promise<LiveRequestSnapshot> {
+  return repository.answerClarification({
+    answer: clarificationAnswerSchema.parse(answer),
+    requestId: requestIdSchema.parse(requestId),
   });
 }
 
@@ -175,9 +256,15 @@ export async function resolveLiveRequestEvidence(
       "Extraction must complete before evidence resolution",
     );
   }
-  const offer = await inspectBonesCoffeeOffer();
+  const discovery = await inspectBonesCoffeeDiscovery();
+  const offer = discovery.selectedOffer;
   const evidence = await resolvePurchaseEvidence(request.intent, offer);
-  return repository.saveEvidence({ evidence, offer, requestId: id });
+  return repository.saveEvidence({
+    candidates: discovery.candidates,
+    evidence,
+    offer,
+    requestId: id,
+  });
 }
 
 export async function evaluateLiveRequest(
@@ -241,9 +328,21 @@ export async function previewLiveApproval(
   );
 }
 
-export async function consumeLiveApproval(
+export async function previewLiveExecution(
   token: string,
 ): Promise<LiveRequestSnapshot> {
+  const parsed = executionTokenSchema.parse(token);
+  const { APPROVAL_TOKEN_PEPPER } = getLiveEnvironment();
+  return repository.getByExecutionTokenHash(
+    hashApprovalToken(parsed, APPROVAL_TOKEN_PEPPER),
+  );
+}
+
+export async function consumeLiveApproval(token: string): Promise<{
+  executionCapability: string;
+  executionExpiresAt: string;
+  request: LiveRequestSnapshot;
+}> {
   const parsed = approvalTokenSchema.parse(token);
   const { APPROVAL_TOKEN_PEPPER } = getLiveEnvironment();
   const tokenHash = hashApprovalToken(parsed, APPROVAL_TOKEN_PEPPER);
@@ -270,7 +369,33 @@ export async function consumeLiveApproval(
       "The merchant offer or policy evidence changed; request a new approval",
     );
   }
-  return repository.consumeApproval(tokenHash);
+  const executionCapability = issueExecutionToken();
+  const executionExpiresAt = new Date(
+    Math.min(new Date(current.expiresAt).getTime(), Date.now() + 30 * 60_000),
+  );
+  const request = await repository.consumeApproval({
+    executionExpiresAt,
+    executionTokenHash: hashApprovalToken(
+      executionCapability,
+      APPROVAL_TOKEN_PEPPER,
+    ),
+    tokenHash,
+  });
+  return {
+    executionCapability,
+    executionExpiresAt: executionExpiresAt.toISOString(),
+    request,
+  };
+}
+
+export async function rejectLiveApproval(
+  token: string,
+): Promise<LiveRequestSnapshot> {
+  const parsed = approvalTokenSchema.parse(token);
+  const { APPROVAL_TOKEN_PEPPER } = getLiveEnvironment();
+  return repository.rejectApproval(
+    hashApprovalToken(parsed, APPROVAL_TOKEN_PEPPER),
+  );
 }
 
 export async function createLivePravaSession(
@@ -384,6 +509,7 @@ export async function createLivePravaSession(
     });
     const now = new Date().toISOString();
     return repository.savePravaSession({
+      expectedVersion: current.version,
       prava: {
         approvalUrl: session.approvalUrl,
         claim: session.claim,
@@ -391,6 +517,9 @@ export async function createLivePravaSession(
         credentialsReady: false,
         expiresAt: session.expiresAt,
         mode: session.mode,
+        providerEvents: gateway.lastResponseMeta
+          ? [gateway.lastResponseMeta]
+          : [],
         redactedSessionRef: session.redactedSessionRef,
         status: "pending",
         txnRefId: null,
@@ -404,6 +533,9 @@ export async function createLivePravaSession(
         error instanceof PravaSandboxGatewayError ? error : null;
       await repository.markPravaSessionOperationFailed({
         requestId: id,
+        ...(gatewayError?.details.responseId === undefined
+          ? {}
+          : { responseId: gatewayError.details.responseId }),
         ...(gatewayError?.details.status === undefined
           ? {}
           : { status: gatewayError.details.status }),
@@ -419,12 +551,25 @@ export async function createLivePravaSession(
       );
     }
 
+    const gatewayError =
+      error instanceof PravaSandboxGatewayError ? error : null;
     await repository
-      .markPravaSessionOperationUnknown(id)
+      .markPravaSessionOperationUnknown({
+        requestId: id,
+        ...(gatewayError?.details.responseId
+          ? { responseId: gatewayError.details.responseId }
+          : {}),
+        ...(gatewayError?.details.status === undefined
+          ? {}
+          : { status: gatewayError.details.status }),
+        ...(gatewayError?.details.vendorCode
+          ? { vendorCode: gatewayError.details.vendorCode }
+          : {}),
+      })
       .catch(() => undefined);
     throw new LiveRepositoryError(
       "CONFLICT",
-      "Prava session creation has an unknown remote outcome. RelayBuy will not retry until the operation is reconciled.",
+      "Prava session creation has an unknown remote outcome. Prava does not document lookup by external_order_ref, so RelayBuy will not retry automatically; an operator must contact Prava with the durable external reference and X-Response-ID.",
     );
   }
 }
@@ -446,6 +591,7 @@ export async function reconcileLivePravaSession(
   ) {
     return repository.savePravaReconciliation({
       event: "prava_session_failed",
+      expectedVersion: current.version,
       prava: {
         ...current.prava,
         credentialsReady: false,
@@ -455,7 +601,8 @@ export async function reconcileLivePravaSession(
       requestId: id,
     });
   }
-  const result = await getPravaGateway().getPaymentMaterial(
+  const gateway = getPravaGateway();
+  const result = await gateway.getPaymentMaterial(
     current.prava.redactedSessionRef,
   );
   const credentialsReady = result.credentials !== null;
@@ -471,11 +618,41 @@ export async function reconcileLivePravaSession(
           : null;
   return repository.savePravaReconciliation({
     event,
+    expectedVersion: current.version,
     prava: {
-      ...current.prava,
+      ...appendProviderEvent(current.prava, gateway.lastResponseMeta),
       credentialsReady,
       status: result.status,
       txnRefId: result.txnRefId,
+      updatedAt: new Date().toISOString(),
+    },
+    requestId: id,
+  });
+}
+
+export async function revokeLivePravaSession(
+  requestId: string,
+): Promise<LiveRequestSnapshot> {
+  const id = requestIdSchema.parse(requestId);
+  const current = await repository.getById(id);
+  if (
+    !current.prava ||
+    !["prava_pending", "credentials_issued"].includes(current.state)
+  ) {
+    throw new LiveRepositoryError(
+      "CONFLICT",
+      "Only an active, unused Prava session can be revoked",
+    );
+  }
+  const gateway = getPravaGateway();
+  await gateway.revokeSession(current.prava.redactedSessionRef);
+  return repository.savePravaReconciliation({
+    event: "prava_session_revoked",
+    expectedVersion: current.version,
+    prava: {
+      ...appendProviderEvent(current.prava, gateway.lastResponseMeta),
+      credentialsReady: false,
+      status: "revoked",
       updatedAt: new Date().toISOString(),
     },
     requestId: id,
@@ -521,17 +698,37 @@ async function reportMerchantDecline(
         "Prava did not confirm the reported merchant outcome",
       );
     }
-  } catch {
+  } catch (error) {
+    const gatewayError =
+      error instanceof PravaSandboxGatewayError ? error : null;
+    const failureStatus = classifyOutcomeReportFailure(error);
+    await repository.failOutcomeReport({
+      expectedVersion: current.version,
+      failureStatus,
+      requestId: current.id,
+      ...(gatewayError?.details.responseId
+        ? { responseId: gatewayError.details.responseId }
+        : {}),
+      ...(gatewayError?.details.status === undefined
+        ? {}
+        : { status: gatewayError.details.status }),
+      ...(gatewayError?.details.vendorCode
+        ? { vendorCode: gatewayError.details.vendorCode }
+        : {}),
+    });
     throw new LiveRepositoryError(
       "CONFLICT",
-      "Prava outcome reporting has an unknown remote outcome. The durable report operation must be reconciled before any retry.",
+      failureStatus === "report_unknown"
+        ? "Prava outcome reporting has an unknown remote outcome. The durable report operation must be reconciled before any retry."
+        : "Prava explicitly rejected the outcome report. The failure is durable and requires operator review before any controlled retry.",
     );
   }
 
   const acknowledgedAt = new Date().toISOString();
   current = await repository.completeOutcomeReport({
+    expectedVersion: current.version,
     prava: {
-      ...current.prava!,
+      ...appendProviderEvent(current.prava!, gateway.lastResponseMeta),
       credentialsReady: false,
       report: {
         acknowledgedAt,
@@ -566,8 +763,9 @@ async function reportMerchantDecline(
   const reconciledAt = new Date().toISOString();
   return repository.savePravaReconciliation({
     event: null,
+    expectedVersion: current.version,
     prava: {
-      ...current.prava!,
+      ...appendProviderEvent(current.prava!, gateway.lastResponseMeta),
       credentialsReady: false,
       status: finalPayment.status,
       updatedAt: reconciledAt,
@@ -593,15 +791,23 @@ export async function executeLiveMerchantCheckout(
     if (current.state === "merchant_declined_test_card") {
       return reportMerchantDecline(current);
     }
-    if (current.state === "report_failed" && current.prava) {
-      const observed = await getPravaGateway().getPaymentMaterial(
+    if (
+      ["report_failed", "report_unknown"].includes(current.state) &&
+      current.prava
+    ) {
+      const reconciliationGateway = getPravaGateway();
+      const observed = await reconciliationGateway.getPaymentMaterial(
         current.prava.redactedSessionRef,
       );
       if (isPravaTerminalStatus(observed.status)) {
         return repository.savePravaReconciliation({
           event: "prava_terminal_observed",
+          expectedVersion: current.version,
           prava: {
-            ...current.prava,
+            ...appendProviderEvent(
+              current.prava,
+              reconciliationGateway.lastResponseMeta,
+            ),
             credentialsReady: false,
             status: observed.status,
             updatedAt: new Date().toISOString(),
@@ -615,14 +821,19 @@ export async function executeLiveMerchantCheckout(
       );
     }
     if (current.state === "reporting_outcome" && current.prava) {
-      const observed = await getPravaGateway().getPaymentMaterial(
+      const reconciliationGateway = getPravaGateway();
+      const observed = await reconciliationGateway.getPaymentMaterial(
         current.prava.redactedSessionRef,
       );
       if (isPravaTerminalStatus(observed.status)) {
         return repository.savePravaReconciliation({
           event: "prava_terminal_observed",
+          expectedVersion: current.version,
           prava: {
-            ...current.prava,
+            ...appendProviderEvent(
+              current.prava,
+              reconciliationGateway.lastResponseMeta,
+            ),
             credentialsReady: false,
             status: observed.status,
             updatedAt: new Date().toISOString(),
@@ -638,6 +849,7 @@ export async function executeLiveMerchantCheckout(
     if (current.state === "merchant_checkout_running" && current.prava) {
       await repository.savePravaReconciliation({
         event: "credential_window_lost",
+        expectedVersion: current.version,
         prava: {
           ...current.prava,
           credentialsReady: false,
@@ -665,6 +877,7 @@ export async function executeLiveMerchantCheckout(
     if (new Date(current.prava.expiresAt) <= new Date()) {
       await repository.savePravaReconciliation({
         event: "prava_session_failed",
+        expectedVersion: current.version,
         prava: {
           ...current.prava,
           credentialsReady: false,
@@ -696,8 +909,9 @@ export async function executeLiveMerchantCheckout(
 
     current = await repository.savePravaReconciliation({
       event: "merchant_checkout_started",
+      expectedVersion: current.version,
       prava: {
-        ...current.prava,
+        ...appendProviderEvent(current.prava, gateway.lastResponseMeta),
         updatedAt: new Date().toISOString(),
       },
       requestId: id,
@@ -710,6 +924,7 @@ export async function executeLiveMerchantCheckout(
       });
       current = await repository.savePravaReconciliation({
         event: "merchant_checkout_declined",
+        expectedVersion: current.version,
         prava: {
           ...current.prava!,
           merchantAttempt,
@@ -723,6 +938,7 @@ export async function executeLiveMerchantCheckout(
         await repository
           .savePravaReconciliation({
             event: "merchant_checkout_blocked",
+            expectedVersion: current.version,
             prava: {
               ...current.prava,
               credentialsReady: false,

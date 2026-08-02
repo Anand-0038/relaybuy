@@ -173,6 +173,25 @@
   outline: none;
 }
 
+.clarificationBox {
+  background: var(--live-soft);
+  border: 1px solid var(--live-border);
+  border-radius: 0.9rem;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.clarificationBox input {
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+  border-radius: 0.7rem;
+  color: var(--live-ink);
+  font: inherit;
+  margin-top: 0.6rem;
+  padding: 0.8rem;
+  width: 100%;
+}
+
 .primaryButton {
   background: var(--live-primary);
   border: 0;
@@ -189,6 +208,25 @@
 }
 
 .primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.secondaryButton {
+  background: transparent;
+  border: 1px solid var(--live-border);
+  border-radius: 0.8rem;
+  color: var(--live-ink);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-weight: 800;
+  justify-content: center;
+  margin-top: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+
+.secondaryButton:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

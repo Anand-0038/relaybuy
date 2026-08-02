@@ -1,17 +1,23 @@
 import {
-  authorizeLiveExecutionCapability,
+  answerLiveRequestClarification,
+  authorizeLiveRequestCapability,
   liveRouteError,
-  reconcileLivePravaSession,
 } from "@/live/service";
 import {
   assertCapabilityRateLimit,
   assertTrustedMutationOrigin,
   privateResponseHeaders,
-  readExecutionCapability,
+  readBearerCapability,
+  readBoundedJson,
 } from "@/server/request-security";
+import { z } from "zod";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const bodySchema = z
+  .object({ answer: z.string().trim().min(1).max(500) })
+  .strict();
 
 export async function POST(
   request: Request,
@@ -19,12 +25,15 @@ export async function POST(
 ): Promise<Response> {
   try {
     assertTrustedMutationOrigin(request);
-    const capability = readExecutionCapability(request);
+    const capability = readBearerCapability(request);
     const { requestId } = await context.params;
-    await authorizeLiveExecutionCapability(requestId, capability);
-    assertCapabilityRateLimit(request, capability, { rateLimit: 20 });
+    await authorizeLiveRequestCapability(requestId, capability);
+    assertCapabilityRateLimit(request, capability, { rateLimit: 6 });
+    const body = bodySchema.parse(await readBoundedJson(request, 2_048));
     return Response.json(
-      { request: await reconcileLivePravaSession(requestId) },
+      {
+        request: await answerLiveRequestClarification(requestId, body.answer),
+      },
       { headers: privateResponseHeaders },
     );
   } catch (error) {

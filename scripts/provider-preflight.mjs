@@ -28,6 +28,16 @@ if (loaded.workspaceConflicts.length > 0) {
   );
 }
 
+const childEnvironment = { ...process.env, RUN_CONNECTED_PREFLIGHT: "true" };
+if (
+  process.env.HTTPS_PROXY ||
+  process.env.HTTP_PROXY ||
+  process.env.https_proxy ||
+  process.env.http_proxy
+) {
+  childEnvironment.NODE_USE_ENV_PROXY = "1";
+}
+
 const child = spawn(
   process.platform === "win32" ? "npx.cmd" : "npx",
   [
@@ -38,7 +48,7 @@ const child = spawn(
   ],
   {
     cwd: projectDir,
-    env: { ...process.env, RUN_CONNECTED_PREFLIGHT: "true" },
+    env: childEnvironment,
     stdio: "inherit",
   },
 );

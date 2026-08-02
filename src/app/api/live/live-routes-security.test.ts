@@ -5,12 +5,14 @@ import { liveRouteError } from "@/live/service";
 
 import { POST as consumeApproval } from "./approve/[token]/route";
 import { POST as issueApproval } from "./requests/[requestId]/approval/route";
+import { POST as answerClarification } from "./requests/[requestId]/clarification/route";
 import { POST as evaluateRequest } from "./requests/[requestId]/evaluate/route";
 import { POST as resolveEvidence } from "./requests/[requestId]/evidence/route";
 import { POST as extractRequest } from "./requests/[requestId]/extract/route";
 import { POST as executeMerchantCheckout } from "./requests/[requestId]/merchant/execute/route";
 import { POST as reconcilePravaSession } from "./requests/[requestId]/prava/reconcile/route";
 import { POST as createPravaSession } from "./requests/[requestId]/prava/session/route";
+import { POST as revokePravaSession } from "./requests/[requestId]/prava/revoke/route";
 import { GET as getRequest } from "./requests/[requestId]/route";
 import { POST as createRequest } from "./requests/route";
 
@@ -29,6 +31,12 @@ type ProtectedRoute = {
 };
 
 const ownerProtectedRoutes: ProtectedRoute[] = [
+  {
+    handler: answerClarification,
+    method: "POST",
+    name: "request clarification",
+    path: `/api/live/requests/${requestId}/clarification`,
+  },
   {
     handler: getRequest,
     method: "GET",
@@ -79,6 +87,12 @@ const approvalProtectedRoutes: ProtectedRoute[] = [
     method: "POST",
     name: "merchant checkout",
     path: `/api/live/requests/${requestId}/merchant/execute`,
+  },
+  {
+    handler: revokePravaSession,
+    method: "POST",
+    name: "Prava revocation",
+    path: `/api/live/requests/${requestId}/prava/revoke`,
   },
 ];
 

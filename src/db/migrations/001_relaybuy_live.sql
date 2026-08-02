@@ -5,19 +5,32 @@ CREATE TABLE IF NOT EXISTS relaybuy_live_requests (
   state text NOT NULL,
   version integer NOT NULL DEFAULT 1,
   request_text text NOT NULL,
+  clarification jsonb,
   intent jsonb,
   offer jsonb,
+  merchant_candidates jsonb,
   evidence jsonb,
   policy_decision jsonb,
   approval_artifact jsonb,
   approval_artifact_hash text,
   approval_token_hash text UNIQUE,
+  request_token_hash text UNIQUE,
+  execution_token_hash text UNIQUE,
+  execution_expires_at timestamptz,
   approval_expires_at timestamptz,
   approval_used_at timestamptz,
   created_at timestamptz NOT NULL,
   updated_at timestamptz NOT NULL,
   expires_at timestamptz NOT NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS relaybuy_live_requests_request_token_hash_idx
+  ON relaybuy_live_requests(request_token_hash)
+  WHERE request_token_hash IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS relaybuy_live_requests_execution_token_hash_idx
+  ON relaybuy_live_requests(execution_token_hash)
+  WHERE execution_token_hash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS relaybuy_live_extractions (
   id uuid PRIMARY KEY,
@@ -30,6 +43,7 @@ CREATE TABLE IF NOT EXISTS relaybuy_live_extractions (
 
 CREATE TABLE IF NOT EXISTS relaybuy_live_evidence_items (
   id uuid PRIMARY KEY,
+  external_citation_id uuid NOT NULL,
   request_id uuid NOT NULL REFERENCES relaybuy_live_requests(id),
   kind text NOT NULL CHECK (kind IN ('merchant', 'variant')),
   query text NOT NULL,
@@ -44,6 +58,9 @@ CREATE TABLE IF NOT EXISTS relaybuy_live_evidence_items (
   source_type text NOT NULL,
   created_at timestamptz NOT NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS relaybuy_live_evidence_request_citation_idx
+  ON relaybuy_live_evidence_items(request_id, kind, external_citation_id);
 
 CREATE TABLE IF NOT EXISTS relaybuy_live_policy_decisions (
   id uuid PRIMARY KEY,
@@ -73,6 +90,9 @@ CREATE TABLE IF NOT EXISTS relaybuy_prava_session_operations (
   artifact_hash text NOT NULL UNIQUE,
   idempotency_key text NOT NULL UNIQUE,
   status text NOT NULL CHECK (status IN ('creating', 'created', 'failed', 'unknown')),
+  response_id text,
+  http_status integer,
+  vendor_code text,
   created_at timestamptz NOT NULL,
   updated_at timestamptz NOT NULL
 );
@@ -100,7 +120,7 @@ CREATE TABLE IF NOT EXISTS relaybuy_prava_outcome_reports (
   txn_ref_id text NOT NULL,
   merchant_attempt_digest text NOT NULL,
   idempotency_key text NOT NULL UNIQUE,
-  status text NOT NULL CHECK (status IN ('reporting', 'reported', 'report_failed')),
+  status text NOT NULL CHECK (status IN ('reporting', 'reported', 'report_failed', 'report_unknown')),
   created_at timestamptz NOT NULL,
   updated_at timestamptz NOT NULL
 );

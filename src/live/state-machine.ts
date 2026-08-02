@@ -2,6 +2,8 @@ import type { LiveRequestState } from "./types";
 
 export type LiveWorkflowEvent =
   | "extraction_succeeded"
+  | "clarification_requested"
+  | "clarification_answered"
   | "evidence_resolved"
   | "policy_refused"
   | "approval_requested"
@@ -11,12 +13,15 @@ export type LiveWorkflowEvent =
   | "prava_credentials_issued"
   | "prava_session_failed"
   | "prava_terminal_observed"
+  | "prava_session_revoked"
   | "merchant_checkout_started"
   | "merchant_checkout_declined"
   | "merchant_checkout_blocked"
   | "credential_window_lost"
   | "prava_report_started"
   | "prava_reported"
+  | "prava_report_failed"
+  | "prava_report_unknown"
   | "approval_invalidated"
   | "request_reopened"
   | "request_expired"
@@ -43,12 +48,18 @@ const transitions: Record<
     merchant_checkout_started: "merchant_checkout_running",
     prava_terminal_observed: "prava_terminal_observed",
     prava_session_failed: "failed",
+    prava_session_revoked: "canceled",
     request_expired: "expired",
   },
   draft: {
+    clarification_requested: "clarification_required",
     extraction_succeeded: "extracted",
     request_expired: "expired",
     workflow_failed: "failed",
+  },
+  clarification_required: {
+    clarification_answered: "draft",
+    request_expired: "expired",
   },
   evidence_resolved: {
     approval_requested: "approval_pending",
@@ -76,6 +87,7 @@ const transitions: Record<
   prava_pending: {
     prava_credentials_issued: "credentials_issued",
     prava_session_failed: "failed",
+    prava_session_revoked: "canceled",
     prava_terminal_observed: "prava_terminal_observed",
     request_expired: "expired",
     workflow_failed: "failed",
@@ -90,13 +102,19 @@ const transitions: Record<
   },
   reported: {},
   reporting_outcome: {
+    prava_report_failed: "report_failed",
+    prava_report_unknown: "report_unknown",
     prava_reported: "reported",
     prava_terminal_observed: "prava_terminal_observed",
   },
   report_failed: {
     prava_terminal_observed: "prava_terminal_observed",
   },
+  report_unknown: {
+    prava_terminal_observed: "prava_terminal_observed",
+  },
   approval_invalidated: {},
+  canceled: {},
   credential_window_lost: {},
   merchant_blocked: {},
   prava_terminal_observed: {},

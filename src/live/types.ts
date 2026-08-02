@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const liveRequestStateSchema = z.enum([
   "draft",
+  "clarification_required",
   "extracted",
   "evidence_resolved",
   "refused",
@@ -13,6 +14,8 @@ export const liveRequestStateSchema = z.enum([
   "merchant_declined_test_card",
   "reporting_outcome",
   "report_failed",
+  "report_unknown",
+  "canceled",
   "prava_terminal_observed",
   "credential_window_lost",
   "merchant_blocked",
@@ -50,6 +53,18 @@ export const purchaseIntentSchema = z
 
 export type PurchaseIntent = z.infer<typeof purchaseIntentSchema>;
 
+export const liveClarificationSchema = z
+  .object({
+    answer: z.string().trim().min(1).max(500).nullable(),
+    answeredAt: z.iso.datetime().nullable(),
+    askedAt: z.iso.datetime(),
+    missingFields: z.array(z.string().trim().min(1)).min(1),
+    question: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export type LiveClarification = z.infer<typeof liveClarificationSchema>;
+
 export const verifiedMerchantOfferSchema = z
   .object({
     currency: z
@@ -86,6 +101,20 @@ export const verifiedMerchantOfferSchema = z
   });
 
 export type VerifiedMerchantOffer = z.infer<typeof verifiedMerchantOfferSchema>;
+
+export const merchantCandidateSchema = z
+  .object({
+    currency: z.string().regex(/^[A-Z]{3}$/),
+    executionEligible: z.boolean(),
+    merchantName: z.string().min(1),
+    optionLabel: z.string().min(1),
+    productName: z.string().min(1),
+    sku: z.string().min(1),
+    totalMinor: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type MerchantCandidate = z.infer<typeof merchantCandidateSchema>;
 
 export const sensoCitationSchema = z
   .object({
@@ -241,6 +270,26 @@ export const livePravaSessionSchema = z
       .nullable()
       .optional(),
     mode: z.literal("sandbox"),
+    providerEvents: z
+      .array(
+        z
+          .object({
+            finishedAt: z.iso.datetime(),
+            operation: z.enum([
+              "create_session",
+              "health",
+              "payment_result",
+              "report_status",
+              "revoke_session",
+            ]),
+            responseId: z.string().min(1).nullable(),
+            startedAt: z.iso.datetime(),
+            status: z.number().int().min(100).max(599),
+          })
+          .strict(),
+      )
+      .max(50)
+      .default([]),
     redactedSessionRef: z.string().min(32),
     report: z
       .object({
@@ -254,13 +303,24 @@ export const livePravaSessionSchema = z
     reportOperation: z
       .object({
         idempotencyKey: z.string().regex(/^[a-f0-9]{64}$/),
-        status: z.enum(["reporting", "reported", "report_failed"]),
+        status: z.enum([
+          "reporting",
+          "reported",
+          "report_failed",
+          "report_unknown",
+        ]),
         updatedAt: z.iso.datetime(),
       })
       .strict()
       .nullable()
       .optional(),
-    status: z.enum(["pending", "awaiting_result", "completed", "failed"]),
+    status: z.enum([
+      "pending",
+      "awaiting_result",
+      "completed",
+      "failed",
+      "revoked",
+    ]),
     txnRefId: z.string().min(1).nullable(),
     updatedAt: z.iso.datetime(),
   })
@@ -299,11 +359,13 @@ export interface LiveApprovalSnapshot {
 export interface LiveRequestSnapshot {
   approval: LiveApprovalSnapshot | null;
   audit: AuditEvent[];
+  clarification: LiveClarification | null;
   createdAt: string;
   evidence: EvidenceBundle | null;
   expiresAt: string;
   id: string;
   intent: PurchaseIntent | null;
+  merchantCandidates: MerchantCandidate[];
   offer: VerifiedMerchantOffer | null;
   policyDecision: PolicyDecision | null;
   prava: LivePravaSession | null;

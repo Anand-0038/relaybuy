@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const testPort = Number(process.env.PLAYWRIGHT_PORT ?? "3100");
-const testBaseUrl = `http://127.0.0.1:${testPort}`;
+const testBaseUrl = `http://localhost:${testPort}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -20,7 +20,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `PRAVA_MODE=replay REPLAY_MUTATIONS_ENABLED=true PAYMENTS_ENABLED=false ALLOW_PRAVA_SESSION_CREATION=false ALLOW_PRAVA_LIVE_ORDER=false npm run dev -- --hostname 127.0.0.1 --port ${testPort}`,
+    command: `APP_BASE_URL=${testBaseUrl} PRAVA_MODE=replay REPLAY_MUTATIONS_ENABLED=true PAYMENTS_ENABLED=false ALLOW_PRAVA_SESSION_CREATION=false ALLOW_PRAVA_LIVE_ORDER=false npm run dev -- --hostname 127.0.0.1 --port ${testPort}`,
     url: testBaseUrl,
     reuseExistingServer: false,
   },

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { LiveRequestSnapshot } from "@/live/types";
 
@@ -31,7 +31,9 @@ export function canReconcileOutcomeReport(
 ): boolean {
   return Boolean(
     request.prava &&
-    ["reporting_outcome", "report_failed"].includes(request.state),
+    ["reporting_outcome", "report_failed", "report_unknown"].includes(
+      request.state,
+    ),
   );
 }
 
@@ -40,6 +42,8 @@ export function ApprovalClient({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pravaApprovalOpened, setPravaApprovalOpened] = useState(false);
   const [request, setRequest] = useState<LiveRequestSnapshot | null>(null);
+  const automaticExecutionStarted = useRef(false);
+  const automaticPollAttempts = useRef(0);
 
   const updateRequest = useCallback((nextRequest: LiveRequestSnapshot) => {
     const storageKey = pravaApprovalStorageKey(nextRequest);
@@ -112,6 +116,29 @@ export function ApprovalClient({ token }: { token: string }) {
     }
   }
 
+  async function rejectApproval() {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/live/approve/${token}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as {
+        error?: { message?: string };
+        request?: LiveRequestSnapshot;
+      };
+      if (!response.ok || !payload.request) {
+        throw new Error(payload.error?.message ?? "Rejection failed");
+      }
+      updateRequest(payload.request);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Rejection failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createPravaSession() {
     if (!request) {
       return;
@@ -122,7 +149,6 @@ export function ApprovalClient({ token }: { token: string }) {
       const response = await fetch(
         `/api/live/requests/${request.id}/prava/session`,
         {
-          headers: { Authorization: `Bearer ${token}` },
           method: "POST",
         },
       );
@@ -145,7 +171,7 @@ export function ApprovalClient({ token }: { token: string }) {
     }
   }
 
-  async function reconcilePrava() {
+  const reconcilePrava = useCallback(async () => {
     if (!request) {
       return;
     }
@@ -155,7 +181,6 @@ export function ApprovalClient({ token }: { token: string }) {
       const response = await fetch(
         `/api/live/requests/${request.id}/prava/reconcile`,
         {
-          headers: { Authorization: `Bearer ${token}` },
           method: "POST",
         },
       );
@@ -178,9 +203,35 @@ export function ApprovalClient({ token }: { token: string }) {
     } finally {
       setBusy(false);
     }
+  }, [request, updateRequest]);
+
+  async function revokePrava() {
+    if (!request) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/live/requests/${request.id}/prava/revoke`,
+        { method: "POST" },
+      );
+      const payload = (await response.json()) as {
+        error?: { message?: string };
+        request?: LiveRequestSnapshot;
+      };
+      if (!response.ok || !payload.request) {
+        throw new Error(payload.error?.message ?? "Prava revocation failed");
+      }
+      updateRequest(payload.request);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Prava revocation failed",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function executeMerchantCheckout() {
+  const executeMerchantCheckout = useCallback(async () => {
     if (!request) {
       return;
     }
@@ -190,7 +241,6 @@ export function ApprovalClient({ token }: { token: string }) {
       const response = await fetch(
         `/api/live/requests/${request.id}/merchant/execute`,
         {
-          headers: { Authorization: `Bearer ${token}` },
           method: "POST",
         },
       );
@@ -213,7 +263,36 @@ export function ApprovalClient({ token }: { token: string }) {
     } finally {
       setBusy(false);
     }
-  }
+  }, [request, updateRequest]);
+
+  useEffect(() => {
+    if (!request || busy || !pravaApprovalOpened) return;
+
+    if (
+      request.state === "prava_pending" &&
+      automaticPollAttempts.current < 60
+    ) {
+      const timeout = window.setTimeout(() => {
+        automaticPollAttempts.current += 1;
+        void reconcilePrava();
+      }, 3_000);
+      return () => window.clearTimeout(timeout);
+    }
+
+    if (
+      request.state === "credentials_issued" &&
+      !automaticExecutionStarted.current
+    ) {
+      automaticExecutionStarted.current = true;
+      void executeMerchantCheckout();
+    }
+  }, [
+    busy,
+    executeMerchantCheckout,
+    pravaApprovalOpened,
+    reconcilePrava,
+    request,
+  ]);
 
   const artifact = request?.approval?.artifact;
 
@@ -276,14 +355,24 @@ export function ApprovalClient({ token }: { token: string }) {
         ) : null}
 
         {request?.state === "approval_pending" ? (
-          <button
-            className={styles.primaryButton}
-            disabled={busy}
-            onClick={approve}
-            type="button"
-          >
-            {busy ? "Approving..." : "Approve exact artifact"}
-          </button>
+          <div>
+            <button
+              className={styles.primaryButton}
+              disabled={busy}
+              onClick={approve}
+              type="button"
+            >
+              {busy ? "Approving..." : "Approve exact artifact"}
+            </button>
+            <button
+              className={styles.secondaryButton}
+              disabled={busy}
+              onClick={rejectApproval}
+              type="button"
+            >
+              Reject purchase
+            </button>
+          </div>
         ) : null}
 
         {request?.state === "approved" ? (
@@ -320,9 +409,10 @@ export function ApprovalClient({ token }: { token: string }) {
             </div>
             {pravaApprovalOpened ? (
               <p className={styles.safetyCopy}>
-                The single-use approval link was opened once. Continue in that
-                Prava tab without refreshing it, then return here to check the
-                status.
+                The single-use approval link was opened once. Continue in the
+                Prava tab without refreshing it. RelayBuy now polls
+                automatically and will execute, report, and reconcile the exact
+                approved sandbox attempt when credentials are ready.
               </p>
             ) : (
               <a
@@ -341,8 +431,18 @@ export function ApprovalClient({ token }: { token: string }) {
               onClick={reconcilePrava}
               type="button"
             >
-              {busy ? "Checking..." : "Check Prava status"}
+              {busy ? "Checking..." : "Check Prava status now"}
             </button>
+            {["prava_pending", "credentials_issued"].includes(request.state) ? (
+              <button
+                className={styles.secondaryButton}
+                disabled={busy}
+                onClick={revokePrava}
+                type="button"
+              >
+                {busy ? "Revoking..." : "Cancel and revoke Prava session"}
+              </button>
+            ) : null}
             {request.state === "credentials_issued" ? (
               <>
                 <p className={styles.safetyCopy}>

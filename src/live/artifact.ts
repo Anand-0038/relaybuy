@@ -139,6 +139,10 @@ export function issueRequestToken(): string {
   return `rb_req_${randomBytes(32).toString("base64url")}`;
 }
 
+export function issueExecutionToken(): string {
+  return `rb_exec_${randomBytes(32).toString("base64url")}`;
+}
+
 export function hashApprovalToken(token: string, pepper: string): string {
   return createHmac("sha256", pepper).update(token).digest("hex");
 }

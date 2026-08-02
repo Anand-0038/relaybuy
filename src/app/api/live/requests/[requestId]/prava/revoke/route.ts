@@ -1,7 +1,7 @@
 import {
   authorizeLiveExecutionCapability,
   liveRouteError,
-  reconcileLivePravaSession,
+  revokeLivePravaSession,
 } from "@/live/service";
 import {
   assertCapabilityRateLimit,
@@ -22,9 +22,9 @@ export async function POST(
     const capability = readExecutionCapability(request);
     const { requestId } = await context.params;
     await authorizeLiveExecutionCapability(requestId, capability);
-    assertCapabilityRateLimit(request, capability, { rateLimit: 20 });
+    assertCapabilityRateLimit(request, capability, { rateLimit: 4 });
     return Response.json(
-      { request: await reconcileLivePravaSession(requestId) },
+      { request: await revokeLivePravaSession(requestId) },
       { headers: privateResponseHeaders },
     );
   } catch (error) {

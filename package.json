@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:connected-refusal": "RUN_CONNECTED_E2E=true playwright test tests/e2e/connected-refusal.spec.ts --workers=1",
     "rehearse": "playwright test tests/e2e/demo.spec.ts --workers=1 --repeat-each=5",
     "format:check": "prettier --check ."
   },

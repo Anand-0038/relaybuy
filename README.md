@@ -5,11 +5,19 @@ an exact merchant, item, amount, structured evidence record, and approval-link
 decision before Prava issues payment credentials, then reconciles what
 actually happened at the merchant.
 
+Public design and submission context:
+
+- [Build disclosure](DISCLOSURE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security model](docs/SECURITY.md)
+- [Known limitations](docs/KNOWN-LIMITATIONS.md)
+
 The canonical demo proves the unsafe cases first:
 
 ```text
 messy request
 → one precise clarification
+→ live variant discovery
 → wrong variant refused
 → over-budget quote refused
 → exact approval payload
@@ -83,10 +91,17 @@ npm test
 npm run build
 npm run test:e2e
 npm run rehearse
+npm run preflight
+npm run test:e2e:connected-refusal
 ```
 
 `npm run rehearse` runs the canonical browser suite five consecutive times with
 one worker.
+
+The connected refusal command performs real OpenAI, merchant, Senso, and
+PostgreSQL calls, but keeps payment disabled and asserts that no approval link
+or Prava session exists for the wrong denomination. It saves its redacted
+screenshot only in the ignored parent `artifacts/` directory.
 
 ## Trust boundaries
 
@@ -116,7 +131,9 @@ one worker.
   safe HTTP status, vendor code, and `X-Response-ID` diagnostics are retained.
 - Every connected request is bound to a random owner capability stored only as
   an HMAC. Pre-approval routes require that capability; payment and merchant
-  routes require the consumed approval capability. Mutation routes also enforce
+  routes require a separate short-lived execution capability minted only when
+  approval is consumed and delivered through an HttpOnly, SameSite=Strict
+  cookie. The URL approval token is revoked atomically. Mutation routes enforce
   same-origin requests, bounded bodies, capability-scoped rate limits, and
   private no-store responses.
 - The connected extractor emits user intent only. Merchant URL, SKU, quoted
@@ -129,6 +146,11 @@ one worker.
   before external calls. Unknown session-creation outcomes stop for
   reconciliation. A lost outcome-report acknowledgement also stops and is
   reconciled by polling; RelayBuy never resends the report blindly.
+- Successful Prava calls retain safe response ID, status, and timing metadata;
+  explicit report rejection and unknown acknowledgement have separate durable
+  recovery states.
+- Active, unused Prava sessions can be revoked from RelayBuy. Revocation and
+  rejection are first-class terminal controls.
 
 ## What is already done (as of August 2026)
 
@@ -136,6 +158,12 @@ one worker.
   Prava session, reconciliation, and merchant-attempt boundaries are complete.
 - Retired replay UI, APIs, JSON persistence, and the unused payment-agent tool
   were removed from the shipped application.
+- Incomplete intent now enters a durable clarification state, asks one bounded
+  question, and automatically resumes extraction, evidence, and policy after
+  the answer.
+- The merchant adapter discovers every currently available gift-card variant
+  from the live product feed and displays why only the Senso-bound `$10` SKU is
+  execution-eligible.
 - OpenAI extraction is wired into the connected path with bounded retries and
   typed fail-closed provider errors. Participant credits became usable and the
   real typed extraction passed the 2026-08-01 connected preflight.
@@ -147,6 +175,9 @@ one worker.
   payment-result polling, constrained merchant execution, outcome reporting,
   and terminal reconciliation. The latest historical session expired in
   `pending` because card/passkey approval was not completed.
+- After the hosted Prava page is opened, RelayBuy performs bounded automatic
+  polling and resumes checkout, reporting, and terminal reconciliation without
+  requiring the user to click every internal state transition.
 - The project `.env.local` is prepared for default-safe operation; connected
   tooling rejects conflicting ambient credentials.
 - The root and judge-facing browser path are aligned on `/live`; transaction

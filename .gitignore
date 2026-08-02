@@ -18,6 +18,10 @@ npm-debug.log*
 prompts/CODEX-PROMPTS.md
 AGENTS.md
 TODO.md
-DISCLOSURE.md
-docs/
 artifacts/
+submission/
+digest.txt
+docs/*
+!docs/ARCHITECTURE.md
+!docs/KNOWN-LIMITATIONS.md
+!docs/SECURITY.md
