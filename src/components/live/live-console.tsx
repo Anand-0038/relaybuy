@@ -3,14 +3,24 @@
 import { useState } from "react";
 
 import type { LiveRequestSnapshot } from "@/live/types";
+import type { SandboxPaymentAvailability } from "@/live/payment-readiness";
 
 import styles from "./live-console.module.css";
 
-const exampleRequest = [
+const authorizedRequest = [
   "Buy 1 Bones Coffee Company gift card.",
   "I need the $10.00 denomination as an e-gift card.",
   "Keep the total at or below $10.00 USD and use an approved merchant only.",
 ].join(" ");
+
+const refusalRequest = [
+  "Buy 1 Bones Coffee Company gift card.",
+  "I need the $25.00 denomination as an e-gift card.",
+  "The maximum authorized budget is $10.00 USD.",
+  "Use an approved merchant only.",
+].join(" ");
+
+type DemoScenario = "authorized" | "custom" | "refusal";
 
 interface ApiErrorShape {
   error?: { message?: string };
@@ -35,8 +45,25 @@ async function post<T>(
     };
   }
 
-  const response = await fetch(url, init);
-  const payload = (await response.json()) as T & ApiErrorShape;
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (error) {
+    throw new Error(
+      "RelayBuy API is unreachable. Reload after confirming the local server is running.",
+      { cause: error },
+    );
+  }
+
+  let payload: T & ApiErrorShape;
+  try {
+    payload = (await response.json()) as T & ApiErrorShape;
+  } catch (error) {
+    throw new Error(
+      `RelayBuy API returned an invalid response (${response.status}). Reload the app and try once more.`,
+      { cause: error },
+    );
+  }
   if (!response.ok) {
     throw new Error(
       payload.error?.message ?? `Request failed with ${response.status}`,
@@ -55,17 +82,39 @@ function money(value: number | null, currency = "USD"): string {
   }).format(value / 100);
 }
 
-export function LiveConsole() {
+export function LiveConsole({
+  paymentAvailability,
+}: {
+  paymentAvailability: SandboxPaymentAvailability;
+}) {
   const [approvalUrl, setApprovalUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [requestText, setRequestText] = useState(exampleRequest);
+  const [requestText, setRequestText] = useState(refusalRequest);
+  const [scenario, setScenario] = useState<DemoScenario>("refusal");
   const [requestCapability, setRequestCapability] = useState<string | null>(
     null,
   );
   const [snapshot, setSnapshot] = useState<LiveRequestSnapshot | null>(null);
   const [stage, setStage] = useState("Ready");
+
+  function selectScenario(nextScenario: Exclude<DemoScenario, "custom">) {
+    setApprovalUrl(null);
+    setClarificationAnswer("");
+    setError(null);
+    setRequestCapability(null);
+    setRequestText(
+      nextScenario === "refusal" ? refusalRequest : authorizedRequest,
+    );
+    setScenario(nextScenario);
+    setSnapshot(null);
+    setStage(
+      nextScenario === "refusal"
+        ? "Ready to prove refusal"
+        : "Ready to prove exact authorization",
+    );
+  }
 
   async function completeEvidencePath(
     request: LiveRequestSnapshot,
@@ -205,10 +254,9 @@ export function LiveConsole() {
       <section className={styles.hero}>
         <div>
           <p className={styles.eyebrow}>SANDBOX — PAYMENT MECHANICS ONLY</p>
-          <h1>Buying, without guessing.</h1>
+          <h1>Proof before purchase.</h1>
           <p className={styles.lede}>
-            OpenAI extracts intent. Merchant data supplies the offer. Senso
-            proves policy. Code refuses. The approval-link holder accepts.
+            The model extracts. Code decides. Humans approve. Prava authorizes.
           </p>
         </div>
         <div className={styles.statusPanel}>
@@ -219,6 +267,29 @@ export function LiveConsole() {
           </div>
         </div>
       </section>
+
+      <ol aria-label="RelayBuy trust path" className={styles.trustPath}>
+        <li>
+          <span>01</span>
+          OpenAI understands
+        </li>
+        <li>
+          <span>02</span>
+          Merchant + Senso prove
+        </li>
+        <li>
+          <span>03</span>
+          Code decides
+        </li>
+        <li>
+          <span>04</span>
+          Human approves
+        </li>
+        <li>
+          <span>05</span>
+          Prava authorizes
+        </li>
+      </ol>
 
       <section className={styles.workspace}>
         <div className={styles.composer}>
@@ -231,11 +302,35 @@ export function LiveConsole() {
               </p>
             </div>
           </div>
+          <fieldset className={styles.scenarioPicker}>
+            <legend>Two-step judge path</legend>
+            <button
+              aria-pressed={scenario === "refusal"}
+              disabled={busy}
+              onClick={() => selectScenario("refusal")}
+              type="button"
+            >
+              <strong>1. Refusal proof</strong>
+              <span>$25 requested · only $10 authorized</span>
+            </button>
+            <button
+              aria-pressed={scenario === "authorized"}
+              disabled={busy}
+              onClick={() => selectScenario("authorized")}
+              type="button"
+            >
+              <strong>2. Exact candidate</strong>
+              <span>Approved $10 option · human gate next</span>
+            </button>
+          </fieldset>
           <label htmlFor="purchase-request">Natural-language request</label>
           <textarea
             disabled={busy}
             id="purchase-request"
-            onChange={(event) => setRequestText(event.target.value)}
+            onChange={(event) => {
+              setRequestText(event.target.value);
+              setScenario("custom");
+            }}
             rows={9}
             value={requestText}
           />
@@ -245,7 +340,11 @@ export function LiveConsole() {
             onClick={runWorkflow}
             type="button"
           >
-            {busy ? "Running live workflow..." : "Run evidence path"}
+            {busy
+              ? "Running live workflow..."
+              : scenario === "refusal"
+                ? "Run refusal proof"
+                : "Run evidence path"}
           </button>
           <p className={styles.safetyCopy}>
             Prava remains unreachable until the exact artifact is approved.
@@ -382,17 +481,30 @@ export function LiveConsole() {
               {decision?.status === "pass" ? (
                 <button
                   className={styles.primaryButton}
-                  disabled={busy || Boolean(snapshot?.approval)}
+                  disabled={
+                    busy ||
+                    Boolean(snapshot?.approval) ||
+                    !paymentAvailability.enabled
+                  }
                   onClick={createApproval}
                   type="button"
                 >
                   {snapshot?.approval
                     ? "Approval already issued"
-                    : `Create approval for ${money(
-                        decision.quoteTotalMinor,
-                        intent?.currency,
-                      )}`}
+                    : !paymentAvailability.enabled
+                      ? paymentAvailability.reason === "UNKNOWN_OUTCOME_PAUSE"
+                        ? "Approval paused: reconcile Prava"
+                        : "Approval unavailable: payment runtime disabled"
+                      : `Create approval for ${money(
+                          decision.quoteTotalMinor,
+                          intent?.currency,
+                        )}`}
                 </button>
+              ) : null}
+              {decision?.status === "pass" && !paymentAvailability.enabled ? (
+                <p className={styles.safetyCopy}>
+                  {paymentAvailability.message}
+                </p>
               ) : null}
               {approvalUrl ? (
                 <a className={styles.approvalLink} href={approvalUrl}>
@@ -425,7 +537,7 @@ export function LiveConsole() {
           </div>
 
           <article className={styles.auditCard}>
-            <p className={styles.cardOwner}>APPEND-ONLY AUDIT</p>
+            <p className={styles.cardOwner}>SEQUENCED AUDIT TRAIL</p>
             <ol>
               {snapshot?.audit.map((event) => (
                 <li key={event.sequence}>

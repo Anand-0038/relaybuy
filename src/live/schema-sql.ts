@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS relaybuy_prava_session_operations (
   response_id text,
   http_status integer,
   vendor_code text,
+  transport_code text,
   created_at timestamptz NOT NULL,
   updated_at timestamptz NOT NULL
 );
@@ -128,6 +129,8 @@ ALTER TABLE relaybuy_prava_session_operations
   ADD COLUMN IF NOT EXISTS http_status integer;
 ALTER TABLE relaybuy_prava_session_operations
   ADD COLUMN IF NOT EXISTS vendor_code text;
+ALTER TABLE relaybuy_prava_session_operations
+  ADD COLUMN IF NOT EXISTS transport_code text;
 
 DO $$
 BEGIN
@@ -145,6 +148,18 @@ BEGIN
       CHECK (status IN ('creating', 'created', 'failed', 'unknown'));
   END IF;
 END $$;
+
+-- Earlier builds persisted the provider operation as unknown but left the
+-- request visually approved. Promote those records once so they cannot be
+-- mistaken for retryable approvals after an upgrade.
+UPDATE relaybuy_live_requests AS request
+SET state = 'prava_session_unknown',
+    version = request.version + 1,
+    updated_at = GREATEST(request.updated_at, operation.updated_at)
+FROM relaybuy_prava_session_operations AS operation
+WHERE operation.request_id = request.id
+  AND operation.status = 'unknown'
+  AND request.state = 'approved';
 
 CREATE TABLE IF NOT EXISTS relaybuy_prava_outcome_reports (
   id uuid PRIMARY KEY,

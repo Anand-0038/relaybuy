@@ -29,7 +29,7 @@ const queries = [
 const bindingGroups = [];
 for (const query of queries) {
   const response = await fetch(`${baseUrl}/org/search`, {
-    body: JSON.stringify({ max_results: 8, query }),
+    body: JSON.stringify({ max_results: 50, query }),
     headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
     method: "POST",
     signal: AbortSignal.timeout(20_000),

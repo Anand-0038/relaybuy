@@ -67,6 +67,11 @@ export type LiveEnvironment = z.infer<typeof liveEnvironmentSchema>;
 let cachedEnvironment: LiveEnvironment | undefined;
 
 export function getLiveEnvironment(): LiveEnvironment {
-  cachedEnvironment ??= liveEnvironmentSchema.parse(process.env);
+  cachedEnvironment ??= liveEnvironmentSchema.parse({
+    ...process.env,
+    APP_BASE_URL:
+      process.env.APP_BASE_URL?.trim() ||
+      process.env.RENDER_EXTERNAL_URL?.trim(),
+  });
   return cachedEnvironment;
 }

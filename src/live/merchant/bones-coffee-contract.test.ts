@@ -53,6 +53,13 @@ describe("Bones Coffee canonical checkout contract", () => {
     ["changed total", { quoteTotalMinor: 2_500 }],
     ["fees added", { feesMinor: 100 }],
     ["wrong merchant", { merchantUrl: "https://example.com/gift-card" }],
+    [
+      "merchant suffix lookalike",
+      {
+        merchantUrl:
+          "https://www.bonescoffee.com.attacker.example/products/gift-card",
+      },
+    ],
     ["multiple quantity", { quantity: 2 }],
   ])("rejects %s", (_name, override) => {
     expect(() =>
@@ -157,6 +164,11 @@ describe("Bones Coffee canonical checkout contract", () => {
     ).toBe(true);
     expect(
       isAllowedBonesCoffeeNavigation("https://checkout.attacker.example"),
+    ).toBe(false);
+    expect(
+      isAllowedBonesCoffeeNavigation(
+        "https://www.bonescoffee.com.attacker.example/checkouts/example",
+      ),
     ).toBe(false);
     expect(
       isAllowedBonesCoffeeNavigation("javascript:alert(document.cookie)"),

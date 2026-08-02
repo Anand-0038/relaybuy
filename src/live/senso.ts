@@ -38,13 +38,35 @@ const sensoSearchResponseSchema = z
   })
   .passthrough();
 
+const SENSO_SEARCH_CANDIDATE_LIMIT = 50;
+
+export function bindSensoSearchQuery(
+  query: string,
+  bindings: ReadonlyArray<{ recordDigest: string }>,
+): string {
+  const digestConstraints = bindings
+    .map(
+      ({ recordDigest }) =>
+        `Return the policy record with evidence digest "${recordDigest}".`,
+    )
+    .join(" ");
+  return `${query} ${digestConstraints}`;
+}
+
 async function searchSenso(
   kind: "merchant" | "variant",
   query: string,
 ): Promise<EvidenceBundle["merchant"]> {
   const environment = getLiveEnvironment();
+  const boundQuery = bindSensoSearchQuery(
+    query,
+    environment.SENSO_POLICY_BINDINGS,
+  );
   const response = await fetch(`${environment.SENSO_BASE_URL}/org/search`, {
-    body: JSON.stringify({ max_results: 8, query }),
+    body: JSON.stringify({
+      max_results: SENSO_SEARCH_CANDIDATE_LIMIT,
+      query: boundQuery,
+    }),
     cache: "no-store",
     headers: {
       "Content-Type": "application/json",
@@ -59,9 +81,17 @@ async function searchSenso(
   }
 
   const parsed = sensoSearchResponseSchema.parse(await response.json());
+  const boundResults = parsed.results.filter((result) =>
+    environment.SENSO_POLICY_BINDINGS.some(
+      (binding) =>
+        result.content_id === binding.contentId &&
+        result.version_id === binding.versionId,
+    ),
+  );
+
   return {
     answer: parsed.answer,
-    citations: parsed.results.map((result) => ({
+    citations: boundResults.map((result) => ({
       chunkIndex: result.chunk_index,
       chunkText: result.chunk_text,
       contentId: result.content_id,
@@ -73,7 +103,7 @@ async function searchSenso(
       versionId: result.version_id ?? null,
     })),
     kind,
-    query,
+    query: boundQuery,
   };
 }
 

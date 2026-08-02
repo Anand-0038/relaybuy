@@ -69,7 +69,7 @@ export function renderSocialCard(): ImageResponse {
               textTransform: "uppercase",
             }}
           >
-            Evidence-gated purchasing
+            Proof before purchase for AI agents
           </div>
           <div
             style={{
@@ -80,11 +80,11 @@ export function renderSocialCard(): ImageResponse {
               lineHeight: 1,
             }}
           >
-            Frontline requests are messy. Purchases should not be.
+            Agents can suggest. Spending requires proof.
           </div>
         </div>
         <div style={{ color: "#60706a", display: "flex", fontSize: "24px" }}>
-          Extract → refuse unsafe options → approve exact facts
+          The model extracts → code decides → humans approve → Prava authorizes
         </div>
       </div>
     </div>,

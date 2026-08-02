@@ -7,14 +7,24 @@ test("the root route opens the current fail-closed connected control plane", asy
 
   await expect(page).toHaveURL(/\/live$/);
   await expect(
-    page.getByRole("heading", { name: "Buying, without guessing." }),
+    page.getByRole("heading", { name: "Proof before purchase." }),
   ).toBeVisible();
   await expect(
     page.getByText("SANDBOX — PAYMENT MECHANICS ONLY"),
   ).toBeVisible();
   await expect(page.getByLabel("Natural-language request")).toHaveValue(
-    /Bones Coffee Company gift card/,
+    /\$25\.00 denomination/,
   );
+  await expect(
+    page.getByRole("button", { name: /1\. Refusal proof/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /2\. Exact candidate/ }).click();
+  await expect(page.getByLabel("Natural-language request")).toHaveValue(
+    /\$10\.00 denomination/,
+  );
+  await expect(
+    page.getByRole("button", { name: /2\. Exact candidate/ }),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("heading", { name: "Prava session: not created" }),
   ).toBeVisible();
@@ -54,6 +64,71 @@ test("legacy approval capability routes redirect without an approval action", as
   ).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Prava session: not created" }),
+  ).toBeVisible();
+});
+
+test("an approved artifact cannot create a Prava session in replay-safe mode", async ({
+  page,
+}) => {
+  const token = "r".repeat(32);
+  const now = "2026-08-02T03:00:00.000Z";
+  await page.route(`**/api/live/approve/${token}`, (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      json: {
+        request: {
+          approval: {
+            approvedAt: now,
+            artifact: {
+              currency: "USD",
+              merchantName: "Bones Coffee Company",
+              productName: "Bones Coffee Company Gift Card",
+              quantity: 1,
+              quoteTotalMinor: 1_000,
+              quotedColor: "$10.00",
+              quotedSize: "E-gift card",
+              sku: "25933838657",
+            },
+            artifactHash: "b".repeat(64),
+            expiresAt: "2026-08-02T04:00:00.000Z",
+          },
+          audit: [],
+          createdAt: now,
+          evidence: null,
+          expiresAt: "2026-08-02T06:00:00.000Z",
+          id: "00000000-0000-4000-8000-000000000009",
+          intent: null,
+          merchantCandidates: [],
+          offer: null,
+          policyDecision: null,
+          prava: null,
+          publicId: "RB-TEST0009",
+          requestText: "Buy the approved ten dollar gift card",
+          source: "web",
+          state: "approved",
+          updatedAt: now,
+          version: 8,
+        },
+      },
+      status: 200,
+    }),
+  );
+
+  await page.goto(`/live/approve/${token}`);
+
+  await expect(
+    page.getByText("Prava session: not created", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/environment proves pre-payment controls only/i),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Create Prava sandbox session" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(
+      "No session request will be sent to Prava from this runtime.",
+    ),
   ).toBeVisible();
 });
 

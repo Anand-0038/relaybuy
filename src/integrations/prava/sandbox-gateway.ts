@@ -45,7 +45,15 @@ const createSessionResponseSchema = z
   })
   .passthrough();
 
-const paymentStatusSchema = z.enum([
+const paymentResultStatusSchema = z.enum([
+  "pending",
+  "processing",
+  "awaiting_result",
+  "completed",
+  "failed",
+]);
+
+const paymentTransactionStatusSchema = z.enum([
   "pending",
   "awaiting_result",
   "completed",
@@ -55,7 +63,7 @@ const paymentStatusSchema = z.enum([
 const paymentLineItemSchema = z
   .object({
     txn_ref_id: z.string().min(1),
-    status: paymentStatusSchema,
+    status: z.string().min(1),
     token: z.string().min(12).nullable(),
     dynamic_cvv: z.string().min(3).nullable(),
     expiry_month: z
@@ -72,7 +80,7 @@ const paymentLineItemSchema = z
 const paymentTransactionSchema = z
   .object({
     txn_id: z.string().min(1),
-    status: paymentStatusSchema,
+    status: paymentTransactionStatusSchema,
     line_items: z.array(paymentLineItemSchema),
   })
   .passthrough();
@@ -81,7 +89,7 @@ const paymentResultResponseSchema = z
   .object({
     session_id: z.string().min(1),
     order_id: z.string().nullable(),
-    status: paymentStatusSchema,
+    status: paymentResultStatusSchema,
     transactions: z.array(paymentTransactionSchema),
   })
   .passthrough();
@@ -154,7 +162,9 @@ const sessionInputSchema = z
   });
 
 export type PravaSandboxSessionInput = z.infer<typeof sessionInputSchema>;
-export type PravaSandboxPaymentStatus = z.infer<typeof paymentStatusSchema>;
+export type PravaSandboxPaymentStatus = z.infer<
+  typeof paymentResultStatusSchema
+>;
 export type PravaSandboxReportInput = z.infer<typeof reportStatusInputSchema>;
 
 export interface PravaEphemeralCredentials {
@@ -179,6 +189,7 @@ export class PravaSandboxGatewayError extends Error {
     public readonly details: {
       status?: number;
       responseId?: string;
+      transportCode?: string;
       vendorCode?: string;
       startedAt?: string;
       finishedAt?: string;
@@ -226,6 +237,22 @@ export function classifyPravaSessionCreateFailure(
   }
 
   return "unknown_outcome";
+}
+
+function transportErrorCode(error: unknown): string | undefined {
+  let candidate: unknown = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (!candidate || typeof candidate !== "object") return undefined;
+    if (
+      "code" in candidate &&
+      typeof candidate.code === "string" &&
+      /^[A-Z0-9_]{2,100}$/.test(candidate.code)
+    ) {
+      return candidate.code;
+    }
+    candidate = "cause" in candidate ? candidate.cause : undefined;
+  }
+  return undefined;
 }
 
 type PravaSandboxGatewayOptions = {
@@ -528,11 +555,16 @@ export class PravaSandboxGateway {
         signal: controller.signal,
       });
     } catch (error) {
+      const transportCode = transportErrorCode(error);
       if (controller.signal.aborted) {
         throw new PravaSandboxGatewayError(
           "VENDOR_REQUEST_TIMEOUT",
           "The Prava sandbox request timed out with an unknown remote outcome",
-          { startedAt, finishedAt: new Date().toISOString() },
+          {
+            startedAt,
+            finishedAt: new Date().toISOString(),
+            ...(transportCode ? { transportCode } : {}),
+          },
           { cause: error },
         );
       }
@@ -540,7 +572,11 @@ export class PravaSandboxGateway {
       throw new PravaSandboxGatewayError(
         "VENDOR_REQUEST_FAILED",
         "The Prava sandbox request could not be completed",
-        { startedAt, finishedAt: new Date().toISOString() },
+        {
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          ...(transportCode ? { transportCode } : {}),
+        },
         { cause: error },
       );
     } finally {

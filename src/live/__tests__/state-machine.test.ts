@@ -24,6 +24,15 @@ describe("live request state machine", () => {
     );
   });
 
+  it("locks an approved artifact when Prava session creation is ambiguous", () => {
+    expect(transitionLiveWorkflow("approved", "prava_session_unknown")).toBe(
+      "prava_session_unknown",
+    );
+    expect(() =>
+      transitionLiveWorkflow("prava_session_unknown", "prava_session_created"),
+    ).toThrow(LiveWorkflowTransitionError);
+  });
+
   it("reaches reported only after the merchant outcome report is acknowledged", () => {
     expect(transitionLiveWorkflow("reporting_outcome", "prava_reported")).toBe(
       "reported",

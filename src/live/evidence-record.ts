@@ -21,6 +21,7 @@ const embeddedRecordSchema = z
   .strict();
 
 const POLICY_RECORD_PREFIX = "RELAYBUY_POLICY_RECORD:";
+const COMPACT_POLICY_RECORD_PREFIX = "RELAYBUY_POLICY_RECORD_V2:";
 
 export interface SensoPolicyBinding {
   contentId: string;
@@ -51,6 +52,35 @@ export function hashStructuredPolicyRecord(record: unknown): string {
 function parseEmbeddedRecord(
   chunkText: string,
 ): z.infer<typeof embeddedRecordSchema> | null {
+  const compactRecordLine = chunkText
+    .split(/\r?\n/)
+    .find((line) => line.trim().startsWith(COMPACT_POLICY_RECORD_PREFIX));
+  if (compactRecordLine) {
+    const payload = compactRecordLine
+      .trim()
+      .slice(COMPACT_POLICY_RECORD_PREFIX.length);
+    const [
+      schemaVersion,
+      merchantStatus,
+      merchantDomain,
+      productHandle,
+      allowedSkus,
+      observedAtMs,
+      freshUntilMs,
+    ] = payload.split("|");
+    const observedAt = Number(observedAtMs);
+    const freshUntil = Number(freshUntilMs);
+    return embeddedRecordSchema.parse({
+      allowedSkus: allowedSkus?.split(",").filter(Boolean),
+      freshUntil: new Date(freshUntil).toISOString(),
+      merchantDomain,
+      merchantStatus,
+      observedAt: new Date(observedAt).toISOString(),
+      productHandle,
+      schemaVersion: Number(schemaVersion),
+    });
+  }
+
   const recordLine = chunkText
     .split(/\r?\n/)
     .find((line) => line.trim().startsWith(POLICY_RECORD_PREFIX));

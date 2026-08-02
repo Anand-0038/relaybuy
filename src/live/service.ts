@@ -28,6 +28,7 @@ import {
   issueRequestToken,
 } from "./artifact";
 import { getLiveEnvironment } from "./env";
+import { getSandboxPaymentAvailability } from "./payment-readiness";
 import {
   attemptBonesCoffeeCheckout,
   BonesCoffeeCheckoutError,
@@ -419,6 +420,12 @@ export async function createLivePravaSession(
     );
   }
 
+  const runtime = parseRuntimeConfig(process.env);
+  const paymentAvailability = getSandboxPaymentAvailability(process.env);
+  if (runtime.mode === "sandbox" && !paymentAvailability.enabled) {
+    throw new LiveRepositoryError("CONFLICT", paymentAvailability.message);
+  }
+
   try {
     assertApprovalStillCurrent(
       current.approval.artifact,
@@ -441,7 +448,6 @@ export async function createLivePravaSession(
   const idempotencyKey = createSessionIdempotencyKey(
     current.approval.artifactHash,
   );
-  const runtime = parseRuntimeConfig(process.env);
   const gate = evaluatePaymentGate({
     approvalStatus:
       current.approval.approvedAt &&
@@ -562,6 +568,9 @@ export async function createLivePravaSession(
         ...(gatewayError?.details.status === undefined
           ? {}
           : { status: gatewayError.details.status }),
+        ...(gatewayError?.details.transportCode
+          ? { transportCode: gatewayError.details.transportCode }
+          : {}),
         ...(gatewayError?.details.vendorCode
           ? { vendorCode: gatewayError.details.vendorCode }
           : {}),
@@ -569,7 +578,9 @@ export async function createLivePravaSession(
       .catch(() => undefined);
     throw new LiveRepositoryError(
       "CONFLICT",
-      "Prava session creation has an unknown remote outcome. Prava does not document lookup by external_order_ref, so RelayBuy will not retry automatically; an operator must contact Prava with the durable external reference and X-Response-ID.",
+      gatewayError?.details.responseId
+        ? "Prava session creation has an unknown remote outcome. RelayBuy will not retry automatically; contact Prava with the private durable external reference and X-Response-ID."
+        : "Prava session creation has an unknown remote outcome and no X-Response-ID was received. RelayBuy will not retry automatically; check the Prava dashboard and contact Prava with the private durable external reference and operation timestamp.",
     );
   }
 }

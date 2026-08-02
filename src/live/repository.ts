@@ -19,6 +19,7 @@ import {
   liveRequestStateSchema,
   merchantCandidateSchema,
   policyDecisionSchema,
+  pravaSessionOperationSchema,
   purchaseIntentSchema,
   verifiedMerchantOfferSchema,
   type ApprovalArtifact,
@@ -69,6 +70,15 @@ interface AuditRow {
 
 interface OperationRow {
   status: string;
+}
+
+interface SessionOperationSnapshotRow {
+  hasResponseId: boolean;
+  httpStatus: number | null;
+  status: string;
+  transportCode: string | null;
+  updatedAt: Date;
+  vendorCode: string | null;
 }
 
 export type LiveRepositoryErrorCode =
@@ -206,6 +216,12 @@ async function loadSnapshotWithSql(
     WHERE request_id = ${requestId}
     ORDER BY sequence ASC
   `;
+  const [sessionOperationRow] = await sql<SessionOperationSnapshotRow[]>`
+    SELECT status, http_status, vendor_code, transport_code,
+           response_id IS NOT NULL AS has_response_id, updated_at
+    FROM relaybuy_prava_session_operations
+    WHERE request_id = ${requestId}
+  `;
 
   const artifact = row.approvalArtifact
     ? approvalArtifactSchema.parse(row.approvalArtifact)
@@ -245,6 +261,12 @@ async function loadSnapshotWithSql(
       ? policyDecisionSchema.parse(row.policyDecision)
       : null,
     prava: row.prava ? livePravaSessionSchema.parse(row.prava) : null,
+    pravaSessionOperation: sessionOperationRow
+      ? pravaSessionOperationSchema.parse({
+          ...sessionOperationRow,
+          updatedAt: toIso(sessionOperationRow.updatedAt),
+        })
+      : null,
     publicId: row.publicId,
     requestText: row.requestText,
     source: row.source,
@@ -848,7 +870,8 @@ export class LiveRequestRepository {
         if (operation?.status === "failed") {
           const [retried] = await transaction<{ id: string }[]>`
             UPDATE relaybuy_prava_session_operations
-            SET status = 'creating', updated_at = ${now}
+            SET status = 'creating', response_id = NULL, http_status = NULL,
+                vendor_code = NULL, transport_code = NULL, updated_at = ${now}
             WHERE request_id = ${input.requestId}
               AND artifact_hash = ${input.artifactHash}
               AND idempotency_key = ${input.idempotencyKey}
@@ -910,25 +933,28 @@ export class LiveRequestRepository {
     requestId: string;
     responseId?: string;
     status?: number;
+    transportCode?: string;
     vendorCode?: string;
   }): Promise<LiveRequestSnapshot> {
     await ensureLiveSchema();
     const sql = getLiveSql();
     return sql.begin(async (transaction) => {
       const row = await getLockedRow(transaction, input.requestId);
+      const state = nextState(row, "prava_session_unknown");
       const now = new Date();
       const [operation] = await transaction<{ id: string }[]>`
         UPDATE relaybuy_prava_session_operations
         SET status = 'unknown', response_id = ${input.responseId ?? null},
             http_status = ${input.status ?? null},
-            vendor_code = ${input.vendorCode ?? null}, updated_at = ${now}
+            vendor_code = ${input.vendorCode ?? null},
+            transport_code = ${input.transportCode ?? null}, updated_at = ${now}
         WHERE request_id = ${input.requestId} AND status = 'creating'
         RETURNING id
       `;
       requireOperationUpdated(operation);
       const [updated] = await transaction<{ version: number }[]>`
         UPDATE relaybuy_live_requests
-        SET version = version + 1, updated_at = ${now}
+        SET state = ${state}, version = version + 1, updated_at = ${now}
         WHERE id = ${input.requestId} AND version = ${row.version}
         RETURNING version
       `;
@@ -941,6 +967,9 @@ export class LiveRequestRepository {
         {
           ...(input.responseId ? { responseId: input.responseId } : {}),
           ...(input.status === undefined ? {} : { status: input.status }),
+          ...(input.transportCode
+            ? { transportCode: input.transportCode }
+            : {}),
           ...(input.vendorCode ? { vendorCode: input.vendorCode } : {}),
         },
         now,

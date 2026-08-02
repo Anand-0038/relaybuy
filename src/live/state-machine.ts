@@ -10,6 +10,7 @@ export type LiveWorkflowEvent =
   | "approval_consumed"
   | "approval_rejected"
   | "prava_session_created"
+  | "prava_session_unknown"
   | "prava_credentials_issued"
   | "prava_session_failed"
   | "prava_terminal_observed"
@@ -41,6 +42,7 @@ const transitions: Record<
   approved: {
     approval_invalidated: "approval_invalidated",
     prava_session_created: "prava_pending",
+    prava_session_unknown: "prava_session_unknown",
     request_expired: "expired",
     workflow_failed: "failed",
   },
@@ -92,6 +94,7 @@ const transitions: Record<
     request_expired: "expired",
     workflow_failed: "failed",
   },
+  prava_session_unknown: {},
   refused: {
     request_reopened: "draft",
     request_expired: "expired",

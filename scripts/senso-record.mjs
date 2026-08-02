@@ -45,9 +45,53 @@ export function extractPolicyBindings(results) {
   }
 
   return [...groups.values()].flatMap((group) => {
-    const recordLine = stitchChunks(group)
-      .split(/\r?\n/)
-      .find((line) => line.trim().startsWith("RELAYBUY_POLICY_RECORD:"));
+    const lines = stitchChunks(group).split(/\r?\n/);
+    const compactRecordLine = lines.find((line) =>
+      line.trim().startsWith("RELAYBUY_POLICY_RECORD_V2:"),
+    );
+    const recordLine = lines.find((line) =>
+      line.trim().startsWith("RELAYBUY_POLICY_RECORD:"),
+    );
+    if (compactRecordLine) {
+      try {
+        const [
+          schemaVersion,
+          merchantStatus,
+          merchantDomain,
+          productHandle,
+          allowedSkus,
+          observedAtMs,
+          freshUntilMs,
+        ] = compactRecordLine
+          .slice(compactRecordLine.indexOf(":") + 1)
+          .trim()
+          .split("|");
+        const record = {
+          allowedSkus: allowedSkus.split(",").filter(Boolean),
+          freshUntil: new Date(Number(freshUntilMs)).toISOString(),
+          merchantDomain,
+          merchantStatus,
+          observedAt: new Date(Number(observedAtMs)).toISOString(),
+          productHandle,
+          schemaVersion: Number(schemaVersion),
+        };
+        const recordDigest = createHash("sha256")
+          .update(JSON.stringify(canonicalize(record)))
+          .digest("hex");
+        return [
+          {
+            binding: {
+              contentId: group[0].content_id,
+              recordDigest,
+              versionId: group[0].version_id,
+            },
+            freshUntil: record.freshUntil,
+          },
+        ];
+      } catch {
+        return [];
+      }
+    }
     if (!recordLine) return [];
     try {
       const record = JSON.parse(

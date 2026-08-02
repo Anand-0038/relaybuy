@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { loadProjectEnvironment } from "./project-env.mjs";
 import { extractPolicyBindings } from "./senso-record.mjs";
@@ -24,6 +26,19 @@ if (!productResponse.ok) {
   throw new Error(`Merchant source returned ${productResponse.status}`);
 }
 const product = await productResponse.json();
+const evidenceTtlMinutes = Number.parseInt(
+  process.env.SENSO_EVIDENCE_TTL_MINUTES ?? "30",
+  10,
+);
+if (
+  !Number.isInteger(evidenceTtlMinutes) ||
+  evidenceTtlMinutes < 15 ||
+  evidenceTtlMinutes > 1_440
+) {
+  throw new Error(
+    "SENSO_EVIDENCE_TTL_MINUTES must be an integer from 15 through 1440",
+  );
+}
 const variants = product.variants.map((variant) => ({
   available: variant.available,
   id: variant.id,
@@ -34,7 +49,9 @@ const variants = product.variants.map((variant) => ({
   title: variant.title,
 }));
 const retrievedAt = new Date().toISOString();
-const freshUntil = new Date(Date.now() + 30 * 60_000).toISOString();
+const freshUntil = new Date(
+  Date.now() + evidenceTtlMinutes * 60_000,
+).toISOString();
 const policyRecord = {
   allowedSkus: ["25933838657"],
   freshUntil,
@@ -58,6 +75,15 @@ function canonicalize(value) {
 const recordDigest = createHash("sha256")
   .update(JSON.stringify(canonicalize(policyRecord)))
   .digest("hex");
+const compactPolicyRecord = [
+  policyRecord.schemaVersion,
+  policyRecord.merchantStatus,
+  policyRecord.merchantDomain,
+  policyRecord.productHandle,
+  policyRecord.allowedSkus.join(","),
+  Date.parse(policyRecord.observedAt),
+  Date.parse(policyRecord.freshUntil),
+].join("|");
 const markdown = `# RelayBuy canonical merchant and product evidence
 
 Retrieved at: ${retrievedAt}
@@ -66,7 +92,8 @@ Source: ${sourceUrl}
 Merchant: Bones Coffee Company
 Merchant domain: www.bonescoffee.com
 Policy: ALLOWED_MERCHANT
-RELAYBUY_POLICY_RECORD:${JSON.stringify(policyRecord)}
+Evidence digest: ${recordDigest}
+RELAYBUY_POLICY_RECORD_V2:${compactPolicyRecord}
 
 Canonical product: ${product.title}
 Canonical handle: ${product.handle}
@@ -194,14 +221,21 @@ const exactQueries = [
     requestedProduct: "$10 Bones Coffee e-gift card",
     sku: "25933838657",
   }),
-];
+].map((query) =>
+  [
+    query,
+    `Return the policy record with evidence digest "${recordDigest}".`,
+    `Return the source retrieved exactly at "${retrievedAt}"`,
+    `with freshness ending exactly at "${freshUntil}".`,
+  ].join(" "),
+);
 
 const indexedBindings = [];
 for (const query of exactQueries) {
   let indexedBinding;
   for (let attempt = 0; attempt < 30 && !indexedBinding; attempt += 1) {
     const searchResponse = await fetch(`${baseUrl}/org/search`, {
-      body: JSON.stringify({ max_results: 8, query }),
+      body: JSON.stringify({ max_results: 50, query }),
       headers: {
         "Content-Type": "application/json",
         "X-API-Key": apiKey,
@@ -246,12 +280,38 @@ if (
   throw new Error("Exact Senso queries returned different immutable records");
 }
 
+const updateEnvironment = process.argv.includes("--update-env");
+if (updateEnvironment) {
+  const environmentPath = fileURLToPath(
+    new URL("../.env.local", import.meta.url),
+  );
+  const contents = readFileSync(environmentPath, "utf8");
+  const replacement = `SENSO_POLICY_BINDINGS=${JSON.stringify([indexedBinding])}`;
+  if (!/^SENSO_POLICY_BINDINGS=.*$/m.test(contents)) {
+    throw new Error("SENSO_POLICY_BINDINGS is missing from .env.local");
+  }
+  const updated = contents.replace(/^SENSO_POLICY_BINDINGS=.*$/m, replacement);
+  const temporaryPath = `${environmentPath}.tmp-${process.pid}`;
+  writeFileSync(temporaryPath, updated, { flag: "wx", mode: 0o600 });
+  renameSync(temporaryPath, environmentPath);
+}
+
 console.log(
-  JSON.stringify({
-    binding: indexedBinding,
-    bindingJson: JSON.stringify([indexedBinding]),
-    filename,
-    status,
-    variantCount: variants.length,
-  }),
+  JSON.stringify(
+    updateEnvironment
+      ? {
+          bindingUpdated: true,
+          filename,
+          freshUntil,
+          status,
+          variantCount: variants.length,
+        }
+      : {
+          binding: indexedBinding,
+          bindingJson: JSON.stringify([indexedBinding]),
+          filename,
+          status,
+          variantCount: variants.length,
+        },
+  ),
 );

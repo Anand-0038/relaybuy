@@ -9,7 +9,7 @@ function renderBlueprint(): string {
 }
 
 describe("Render deployment policy", () => {
-  it("defines a manually deployed web service with a health check and custom domain", () => {
+  it("defines a manually deployed web service with a health check", () => {
     const blueprint = renderBlueprint();
 
     expect(blueprint).toContain("type: web");
@@ -19,7 +19,11 @@ describe("Render deployment policy", () => {
     expect(blueprint).toContain('autoDeployTrigger: "off"');
     expect(blueprint).toContain("healthCheckPath: /api/health");
     expect(blueprint).toContain("npm start -- -H 0.0.0.0 -p $PORT");
-    expect(blueprint).toContain("relaybuy.a2zbtc.com");
+    expect(blueprint).not.toContain("APP_BASE_URL");
+    expect(blueprint).not.toContain("domains:");
+    expect(blueprint).toMatch(
+      /key: OPENAI_EXTRACTION_ENABLED\n\s+value: "true"/,
+    );
   });
 
   it("keeps every payment capability disabled in the synced deployment", () => {

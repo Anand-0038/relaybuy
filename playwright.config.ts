@@ -20,7 +20,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `APP_BASE_URL=${testBaseUrl} PRAVA_MODE=replay REPLAY_MUTATIONS_ENABLED=true PAYMENTS_ENABLED=false ALLOW_PRAVA_SESSION_CREATION=false ALLOW_PRAVA_LIVE_ORDER=false npm run dev -- --hostname 127.0.0.1 --port ${testPort}`,
+    command: `APP_BASE_URL=${testBaseUrl} PRAVA_MODE=replay REPLAY_MUTATIONS_ENABLED=true PAYMENTS_ENABLED=false ALLOW_PRAVA_SESSION_CREATION=false ALLOW_PRAVA_LIVE_ORDER=false RELAYBUY_PAYMENT_PAUSE_REASON= npm run dev -- --hostname 127.0.0.1 --port ${testPort}`,
     url: testBaseUrl,
     reuseExistingServer: false,
   },

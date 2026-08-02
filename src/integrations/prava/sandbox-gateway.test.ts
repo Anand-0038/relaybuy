@@ -205,6 +205,62 @@ describe("PravaSandboxGateway", () => {
     );
   });
 
+  it("accepts Prava's documented processing state without exposing credentials", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            session_id: "ses_test_processing",
+            session_token: "sensitive-session-jwt",
+            iframe_url: "https://checkout.prava.space/s/ses_test_processing",
+            order_id: "internal-order-example",
+            expires_at: "2026-08-01T02:15:00.000Z",
+          }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            session_id: "ses_test_processing",
+            order_id: "internal-order-example",
+            status: "processing",
+            transactions: [
+              {
+                txn_id: "txn_test_processing",
+                status: "pending",
+                line_items: [
+                  {
+                    txn_ref_id: "txn_ref_processing",
+                    status: "processing",
+                    token: null,
+                    dynamic_cvv: null,
+                    expiry_month: null,
+                    expiry_year: null,
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    const gateway = new PravaSandboxGateway({
+      secretKey: "sk_test_redacted_for_unit_test",
+      fetch: fetchMock,
+    });
+    const session = await gateway.createSession(sessionInput);
+
+    await expect(
+      gateway.getPaymentMaterial(session.redactedSessionRef),
+    ).resolves.toMatchObject({
+      credentials: null,
+      status: "processing",
+      txnRefId: null,
+    });
+  });
+
   it("revokes an active sealed session without exposing its session id", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -498,6 +554,23 @@ describe("PravaSandboxGateway", () => {
         responseId: "safe-response-id",
         vendorCode: "PROVISION_ERROR",
       },
+    });
+  });
+
+  it("preserves a bounded transport code for unknown-outcome reconciliation", async () => {
+    const cause = Object.assign(new Error("connect timed out"), {
+      code: "ETIMEDOUT",
+    });
+    const gateway = new PravaSandboxGateway({
+      secretKey: "sk_test_redacted_for_unit_test",
+      fetch: vi
+        .fn<typeof fetch>()
+        .mockRejectedValue(new TypeError("fetch failed", { cause })),
+    });
+
+    await expect(gateway.createSession(sessionInput)).rejects.toMatchObject({
+      code: "VENDOR_REQUEST_FAILED",
+      details: { transportCode: "ETIMEDOUT" },
     });
   });
 

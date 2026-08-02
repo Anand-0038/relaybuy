@@ -4,6 +4,7 @@ import { LiveOpenAiExtractionError } from "../openai-extractor";
 import {
   canonicalReadinessRequest,
   probeConnectedReadiness,
+  probePravaAuthentication,
   type ConnectedReadinessDependencies,
 } from "../readiness";
 import type {
@@ -116,6 +117,39 @@ function dependencies(): ConnectedReadinessDependencies {
 }
 
 describe("connected readiness", () => {
+  it("probes Prava authentication through the read-only card-list endpoint", async () => {
+    const fetchProvider = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "CUSTOMER_NOT_FOUND",
+            message: "No customer for the given customer_id",
+          },
+        }),
+        { status: 404 },
+      ),
+    );
+
+    await expect(
+      probePravaAuthentication({
+        fetch: fetchProvider,
+        secretKey: "sk_test_example",
+      }),
+    ).resolves.toBe(true);
+
+    expect(fetchProvider).toHaveBeenCalledOnce();
+    const [url, init] = fetchProvider.mock.calls[0] as [URL, RequestInit];
+    expect(url.origin).toBe("https://sandbox.api.prava.space");
+    expect(url.pathname).toBe("/v1/listCards");
+    expect(url.searchParams.get("customer_id")).toBe(
+      "relaybuy_readiness_probe_nonexistent",
+    );
+    expect(init).toMatchObject({
+      headers: { Authorization: "Bearer sk_test_example" },
+      method: "GET",
+    });
+  });
+
   it("runs the actual pre-payment dependency chain and reports ready", async () => {
     const result = await probeConnectedReadiness(dependencies());
 

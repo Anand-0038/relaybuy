@@ -109,6 +109,60 @@ describe("live purchase policy", () => {
     expect(decision.reasonCode).toBe("SIZE_MISMATCH");
   });
 
+  it("describes a gift-card option mismatch as a denomination mismatch", () => {
+    const decision = evaluateLivePurchasePolicy(
+      {
+        ...baseIntent,
+        budgetMinor: 1_000,
+        preferredMerchant: "Bones Coffee Company",
+        quantity: 1,
+        requestedColor: "$25.00",
+        requestedProduct: "Bones Coffee Company Gift Card",
+        requestedSize: "E-gift card",
+      },
+      {
+        ...offer,
+        feesMinor: 0,
+        merchantName: "Bones Coffee Company",
+        merchantUrl: "https://www.bonescoffee.com/products/gift-card",
+        productName: "Bones Coffee Company Gift Card",
+        quantity: 1,
+        quotedColor: "$10.00",
+        quotedSize: "E-gift card",
+        quoteTotalMinor: 1_000,
+        unitPriceMinor: 1_000,
+      },
+      evidence,
+      {
+        minimumEvidenceScore: 0.35,
+        now: new Date("2026-07-29T00:10:00.000Z"),
+      },
+    );
+
+    expect(decision.reasonCode).toBe("DENOMINATION_MISMATCH");
+    expect(decision.checks.at(-1)).toMatchObject({
+      code: "variant.denomination",
+      detail:
+        "Requested denomination: $25.00. Authorized denomination: $10.00.",
+      status: "fail",
+    });
+  });
+
+  it("retains color mismatch semantics for non-gift-card products", () => {
+    const decision = evaluateLivePurchasePolicy(
+      { ...baseIntent, requestedColor: "Navy" },
+      offer,
+      evidence,
+      {
+        minimumEvidenceScore: 0.35,
+        now: new Date("2026-07-29T00:10:00.000Z"),
+      },
+    );
+
+    expect(decision.reasonCode).toBe("COLOR_MISMATCH");
+    expect(decision.checks.at(-1)?.code).toBe("variant.color");
+  });
+
   it("refuses an over-budget quote", () => {
     const decision = evaluateLivePurchasePolicy(
       baseIntent,

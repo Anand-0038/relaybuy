@@ -8,6 +8,7 @@ export const liveRequestStateSchema = z.enum([
   "refused",
   "approval_pending",
   "approved",
+  "prava_session_unknown",
   "prava_pending",
   "credentials_issued",
   "merchant_checkout_running",
@@ -184,6 +185,7 @@ export const policyReasonCodeSchema = z.enum([
   "MISSING_REQUIRED_FIELD",
   "PRODUCT_MISMATCH",
   "MERCHANT_MISMATCH",
+  "DENOMINATION_MISMATCH",
   "COLOR_MISMATCH",
   "SIZE_MISMATCH",
   "QUANTITY_MISMATCH",
@@ -316,6 +318,7 @@ export const livePravaSessionSchema = z
       .optional(),
     status: z.enum([
       "pending",
+      "processing",
       "awaiting_result",
       "completed",
       "failed",
@@ -356,6 +359,19 @@ export interface LiveApprovalSnapshot {
   expiresAt: string;
 }
 
+export const pravaSessionOperationSchema = z
+  .object({
+    hasResponseId: z.boolean(),
+    httpStatus: z.number().int().min(100).max(599).nullable(),
+    status: z.enum(["creating", "created", "failed", "unknown"]),
+    transportCode: z.string().min(1).max(100).nullable(),
+    updatedAt: z.iso.datetime(),
+    vendorCode: z.string().min(1).max(200).nullable(),
+  })
+  .strict();
+
+export type PravaSessionOperation = z.infer<typeof pravaSessionOperationSchema>;
+
 export interface LiveRequestSnapshot {
   approval: LiveApprovalSnapshot | null;
   audit: AuditEvent[];
@@ -369,6 +385,7 @@ export interface LiveRequestSnapshot {
   offer: VerifiedMerchantOffer | null;
   policyDecision: PolicyDecision | null;
   prava: LivePravaSession | null;
+  pravaSessionOperation?: PravaSessionOperation | null;
   publicId: string;
   requestText: string;
   source: "linq" | "web";

@@ -44,14 +44,15 @@ export class RequestSecurityError extends Error {
 }
 
 function configuredApplicationUrl(): URL | null {
-  const configured = process.env.APP_BASE_URL?.trim();
+  const configured =
+    process.env.APP_BASE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim();
 
   if (!configured) {
     if (process.env.NODE_ENV === "production") {
       throw new RequestSecurityError(
         "INVALID_ORIGIN",
         500,
-        "APP_BASE_URL is required in production",
+        "APP_BASE_URL or RENDER_EXTERNAL_URL is required in production",
       );
     }
     return null;
@@ -63,8 +64,40 @@ function configuredApplicationUrl(): URL | null {
     throw new RequestSecurityError(
       "INVALID_ORIGIN",
       500,
-      "APP_BASE_URL is not a valid absolute URL",
+      "APP_BASE_URL or RENDER_EXTERNAL_URL is not a valid absolute URL",
     );
+  }
+}
+
+const loopbackHostnames = new Set(["127.0.0.1", "[::1]", "localhost"]);
+
+function isLoopbackUrl(url: URL): boolean {
+  return loopbackHostnames.has(url.hostname);
+}
+
+function configuredLoopbackOrigins(configured: URL): string[] {
+  if (!isLoopbackUrl(configured)) return [];
+  const port = configured.port ? `:${configured.port}` : "";
+  return [
+    `${configured.protocol}//localhost${port}`,
+    `${configured.protocol}//127.0.0.1${port}`,
+    `${configured.protocol}//[::1]${port}`,
+  ];
+}
+
+function isAllowedRequestHost(host: string, configured: URL): boolean {
+  if (host === configured.host) return true;
+  if (!isLoopbackUrl(configured)) return false;
+
+  try {
+    const candidate = new URL(`${configured.protocol}//${host}`);
+    return (
+      isLoopbackUrl(candidate) &&
+      candidate.protocol === configured.protocol &&
+      candidate.port === configured.port
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -80,6 +113,9 @@ function allowedOrigins(request: Request): Set<string> {
 
   if (configured) {
     origins.add(configured.origin);
+    for (const origin of configuredLoopbackOrigins(configured)) {
+      origins.add(origin);
+    }
   }
 
   return origins;
@@ -98,7 +134,7 @@ function assertProductionRequestHost(request: Request): void {
     request.headers.get("x-forwarded-host")?.split(",").at(-1)?.trim(),
   ].filter((host): host is string => Boolean(host));
 
-  if (suppliedHosts.some((host) => host !== configured.host)) {
+  if (suppliedHosts.some((host) => !isAllowedRequestHost(host, configured))) {
     throw new RequestSecurityError(
       "INVALID_ORIGIN",
       403,

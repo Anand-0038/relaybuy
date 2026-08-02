@@ -4,7 +4,7 @@
   "id": "/",
   "scope": "/",
   "lang": "en",
-  "description": "Frontline evidence-gated restock approvals",
+  "description": "Proof-carrying purchase approval for AI agents",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f7f6f1",

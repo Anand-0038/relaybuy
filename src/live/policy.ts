@@ -19,6 +19,13 @@ function same(left: string | null, right: string): boolean {
   return Boolean(left && normalize(left) === normalize(right));
 }
 
+function isGiftCardOffer(offer: VerifiedMerchantOffer): boolean {
+  return (
+    new URL(offer.merchantUrl).pathname.replace(/\/$/, "") ===
+    "/products/gift-card"
+  );
+}
+
 function sameProduct(left: string | null, right: string): boolean {
   if (!left) {
     return false;
@@ -258,22 +265,29 @@ export function evaluateLivePurchasePolicy(
   });
 
   if (!same(intent.requestedColor, offer.quotedColor)) {
+    const giftCard = isGiftCardOffer(offer);
     checks.push({
-      code: "variant.color",
-      detail: `Requested ${intent.requestedColor}; offered ${offer.quotedColor}.`,
+      code: giftCard ? "variant.denomination" : "variant.color",
+      detail: giftCard
+        ? `Requested denomination: ${intent.requestedColor}. Authorized denomination: ${offer.quotedColor}.`
+        : `Requested ${intent.requestedColor}; offered ${offer.quotedColor}.`,
       status: "fail",
     });
     return refused(
-      "COLOR_MISMATCH",
-      "Requested color does not match the verified merchant variant.",
+      giftCard ? "DENOMINATION_MISMATCH" : "COLOR_MISMATCH",
+      giftCard
+        ? "Requested denomination does not match the authorized merchant variant."
+        : "Requested color does not match the verified merchant variant.",
       checks,
       offer.quoteTotalMinor,
       decidedAt,
     );
   }
   checks.push({
-    code: "variant.color",
-    detail: `Exact color match: ${offer.quotedColor}.`,
+    code: isGiftCardOffer(offer) ? "variant.denomination" : "variant.color",
+    detail: isGiftCardOffer(offer)
+      ? `Exact denomination match: ${offer.quotedColor}.`
+      : `Exact color match: ${offer.quotedColor}.`,
     status: "pass",
   });
 

@@ -98,15 +98,85 @@ describe("request security", () => {
     }
   });
 
+  it("accepts equivalent same-port loopback aliases in a local production run", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_BASE_URL", "http://localhost:3000");
+    const trusted = new Request("http://127.0.0.1:3000/api/test", {
+      headers: {
+        host: "127.0.0.1:3000",
+        origin: "http://127.0.0.1:3000",
+        "sec-fetch-site": "same-origin",
+      },
+      method: "POST",
+    });
+
+    expect(() => assertTrustedMutationOrigin(trusted)).not.toThrow();
+
+    for (const hostile of [
+      new Request("http://127.0.0.1:3001/api/test", {
+        headers: {
+          host: "127.0.0.1:3001",
+          origin: "http://127.0.0.1:3001",
+          "sec-fetch-site": "same-origin",
+        },
+        method: "POST",
+      }),
+      new Request("http://attacker.example:3000/api/test", {
+        headers: {
+          host: "attacker.example:3000",
+          origin: "http://attacker.example:3000",
+          "sec-fetch-site": "same-origin",
+        },
+        method: "POST",
+      }),
+      new Request("http://127.0.0.1:3000/api/test", {
+        headers: {
+          host: "127.0.0.1:3000",
+          origin: "http://127.0.0.1:3000",
+          "sec-fetch-site": "same-origin",
+          "x-forwarded-host": "attacker.example",
+        },
+        method: "POST",
+      }),
+    ]) {
+      expect(() => assertTrustedMutationOrigin(hostile)).toThrowError(
+        expect.objectContaining<Partial<RequestSecurityError>>({
+          code: "INVALID_ORIGIN",
+          status: 403,
+        }),
+      );
+    }
+  });
+
   it("requires APP_BASE_URL for production mutations", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("APP_BASE_URL", "");
+    vi.stubEnv("RENDER_EXTERNAL_URL", "");
     expect(() => assertTrustedMutationOrigin(mutation())).toThrowError(
       expect.objectContaining<Partial<RequestSecurityError>>({
         code: "INVALID_ORIGIN",
         status: 500,
       }),
     );
+  });
+
+  it("uses Render's public service URL when APP_BASE_URL is unset", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_BASE_URL", "");
+    vi.stubEnv("RENDER_EXTERNAL_URL", "https://relaybuy-example.onrender.com");
+    const trusted = new Request(
+      "https://relaybuy-example.onrender.com/api/test",
+      {
+        headers: {
+          host: "relaybuy-example.onrender.com",
+          origin: "https://relaybuy-example.onrender.com",
+          "sec-fetch-site": "same-origin",
+        },
+        method: "POST",
+      },
+    );
+
+    expect(() => assertTrustedMutationOrigin(trusted)).not.toThrow();
   });
 
   it("checks mutation origin before authenticated work", () => {

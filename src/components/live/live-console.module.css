@@ -99,6 +99,34 @@
   max-width: 94rem;
 }
 
+.trustPath {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  list-style: none;
+  margin: 0 auto 1.5rem;
+  max-width: 94rem;
+  padding: 0;
+}
+
+.trustPath li {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--live-border);
+  border-radius: 0.85rem;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  gap: 0.55rem;
+  padding: 0.7rem;
+}
+
+.trustPath span {
+  color: var(--live-primary-strong);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+}
+
 .composer,
 .results,
 .approvalPanel {
@@ -153,6 +181,54 @@
   letter-spacing: 0.08em;
   margin-bottom: 0.5rem;
   text-transform: uppercase;
+}
+
+.scenarioPicker {
+  border: 0;
+  display: grid;
+  gap: 0.65rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+}
+
+.scenarioPicker legend {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.scenarioPicker button {
+  background: var(--live-surface);
+  border: 1px solid var(--live-border);
+  border-radius: 0.8rem;
+  color: var(--live-ink);
+  cursor: pointer;
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.scenarioPicker button[aria-pressed="true"] {
+  background: var(--live-soft);
+  border-color: var(--live-primary);
+  box-shadow: 0 0 0 0.15rem rgba(13, 139, 128, 0.1);
+}
+
+.scenarioPicker button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.scenarioPicker strong,
+.scenarioPicker span {
+  display: block;
+}
+
+.scenarioPicker span {
+  color: var(--live-muted);
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
 }
 
 .composer textarea {
@@ -257,7 +333,7 @@
 .grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .card,
@@ -374,6 +450,48 @@
   margin-top: 1rem;
 }
 
+.receiptCard {
+  background: var(--live-night);
+  border-radius: 1rem;
+  color: white;
+  margin-top: 1.25rem;
+  padding: 1.25rem;
+}
+
+.receiptCard h2 {
+  font-size: 1.65rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.receiptCard dl {
+  margin: 0;
+}
+
+.receiptCard dl div {
+  align-items: baseline;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.7rem 0;
+}
+
+.receiptCard dt {
+  color: #a8c1bb;
+  font-size: 0.78rem;
+}
+
+.receiptCard dd {
+  font-weight: 800;
+  margin: 0;
+  text-align: right;
+}
+
+.receiptCard .safetyCopy {
+  color: #a8c1bb;
+  margin-bottom: 0;
+}
+
 .auditCard ol {
   display: grid;
   gap: 0.55rem;
@@ -417,6 +535,24 @@
 .successBanner {
   background: var(--live-soft);
   color: var(--live-primary-strong);
+}
+
+.paymentAvailability {
+  background: var(--live-warning-soft);
+  border: 1px solid rgba(169, 91, 12, 0.28);
+  border-radius: 0.9rem;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.paymentAvailability > strong {
+  display: block;
+}
+
+.paymentAvailability > p {
+  color: var(--live-muted);
+  line-height: 1.5;
+  margin: 0.4rem 0 0;
 }
 
 .approvalPage {
@@ -478,6 +614,10 @@
 @media (max-width: 50rem) {
   .hero,
   .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .trustPath {
     grid-template-columns: 1fr;
   }
 

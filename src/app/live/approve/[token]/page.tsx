@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { ApprovalClient } from "@/components/live/approval-client";
+import { getSandboxPaymentAvailability } from "@/live/payment-readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -15,5 +16,10 @@ export default async function LiveApprovalPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  return <ApprovalClient token={token} />;
+  return (
+    <ApprovalClient
+      paymentAvailability={getSandboxPaymentAvailability(process.env)}
+      token={token}
+    />
+  );
 }

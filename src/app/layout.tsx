@@ -10,7 +10,7 @@ const siteUrl = getSiteUrl();
 export const metadata: Metadata = {
   metadataBase: siteUrl,
   title: {
-    default: "RelayBuy — Evidence-gated purchasing for frontline teams",
+    default: "RelayBuy — Proof Before Purchase for AI Agents",
     template: "%s · RelayBuy",
   },
   description: siteDescription,
@@ -18,8 +18,8 @@ export const metadata: Metadata = {
   category: "business",
   creator: "RelayBuy",
   keywords: [
-    "frontline purchasing",
     "agentic commerce",
+    "AI agent payments",
     "purchase approval",
     "variant verification",
     "Prava",
@@ -38,13 +38,13 @@ export const metadata: Metadata = {
     type: "website",
     url: "/",
     siteName,
-    title: "RelayBuy — Evidence-gated purchasing for frontline teams",
+    title: "RelayBuy — Proof Before Purchase for AI Agents",
     description: siteDescription,
     images: [{ url: "/opengraph-image", width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "RelayBuy — Evidence-gated purchasing",
+    title: "RelayBuy — Proof Before Purchase for AI Agents",
     description: siteDescription,
     images: ["/twitter-image"],
   },
@@ -78,7 +78,7 @@ export default function RootLayout({
     operatingSystem: "Web",
     featureList: [
       "Typed request extraction",
-      "Deterministic variant refusal",
+      "Deterministic denomination refusal",
       "Budget policy enforcement",
       "Hash-bound capability-link approval",
     ],

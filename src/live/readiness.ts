@@ -62,28 +62,38 @@ async function probeDatabase(): Promise<boolean> {
   return rows[0]?.ok === 1;
 }
 
-async function probePravaAuthentication(): Promise<boolean> {
-  const { PRAVA_MERCHANT_SECRET_KEY } = getLiveEnvironment();
+export async function probePravaAuthentication(
+  dependencies: {
+    fetch?: typeof fetch;
+    secretKey?: string;
+  } = {},
+): Promise<boolean> {
+  const secretKey =
+    dependencies.secretKey ?? getLiveEnvironment().PRAVA_MERCHANT_SECRET_KEY;
+  const fetchProvider = dependencies.fetch ?? fetch;
+  const probeUrl = new URL("https://sandbox.api.prava.space/v1/listCards");
+  probeUrl.searchParams.set(
+    "customer_id",
+    "relaybuy_readiness_probe_nonexistent",
+  );
+  probeUrl.searchParams.set("status", "active");
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const response = await fetch(
-        "https://sandbox.api.prava.space/v1/sessions",
-        {
-          body: "{}",
-          headers: {
-            Authorization: `Bearer ${PRAVA_MERCHANT_SECRET_KEY}`,
-            "Content-Type": "application/json",
-          },
-          method: "POST",
-          signal: AbortSignal.timeout(20_000),
+      const response = await fetchProvider(probeUrl, {
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
         },
-      );
-      if (response.status === 400) {
+        method: "GET",
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (response.ok) return true;
+      if (response.status === 404) {
         const payload = (await response.json()) as {
           error?: { code?: unknown };
         };
-        if (payload.error?.code === "VAL_2001") return true;
-        console.warn("Prava readiness returned an unexpected validation code");
+        if (payload.error?.code === "CUSTOMER_NOT_FOUND") return true;
+        console.warn("Prava readiness returned an unexpected not-found code");
         return false;
       }
       if (response.status !== 429 && response.status < 500) {
@@ -95,7 +105,7 @@ async function probePravaAuthentication(): Promise<boolean> {
       console.warn(
         `Prava readiness transport failed: ${error instanceof Error ? error.name : "UnknownError"}`,
       );
-      // The deliberately invalid payload cannot create a session; one retry is safe.
+      // The read-only probe cannot create a session; one retry is safe.
     }
   }
   return false;
@@ -202,7 +212,10 @@ export async function probeConnectedReadiness(
         decision.status === "pass"
           ? { status: "ready" }
           : blocked(`POLICY_${decision.reasonCode}`);
-    } catch {
+    } catch (error) {
+      console.warn(
+        `Senso readiness failed: ${error instanceof Error ? `${error.name}: ${error.message}` : "UnknownError"}`,
+      );
       checks.senso = blocked("SENSO_POLICY_UNAVAILABLE");
     }
   }

@@ -59,6 +59,27 @@ describe("structured Senso authorization", () => {
     });
   });
 
+  it("accepts the compact chunk-safe policy record format", () => {
+    const compactRecord = [
+      record.schemaVersion,
+      record.merchantStatus,
+      record.merchantDomain,
+      record.productHandle,
+      record.allowedSkus.join(","),
+      Date.parse(record.observedAt),
+      Date.parse(record.freshUntil),
+    ].join("|");
+    const evidence = citation(`RELAYBUY_POLICY_RECORD_V2:${compactRecord}`);
+
+    expect(resolveStructuredAuthorization([evidence], bindings)).toEqual({
+      ...record,
+      citationIds: [evidence.id],
+      contentId,
+      recordDigest,
+      versionId,
+    });
+  });
+
   it("ignores generated prose and rejects unallowlisted content IDs", () => {
     expect(() =>
       resolveStructuredAuthorization(

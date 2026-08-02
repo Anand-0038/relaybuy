@@ -52,9 +52,10 @@ forwarded headers.
 
 ## Persistence and recovery
 
-PostgreSQL stores redacted request snapshots and append-only audit events.
-Unique durable claims prevent duplicate Prava session creation and duplicate
-outcome reporting across processes.
+PostgreSQL stores redacted request snapshots and application-enforced,
+sequenced audit events. Unique durable claims prevent duplicate Prava session
+creation and duplicate outcome reporting across processes. The current audit
+trail is not presented as cryptographically tamper-evident.
 
 An explicit provider rejection and an unknown remote outcome are different
 states. Timeout, malformed response, HTTP 5xx, or lost acknowledgement enters

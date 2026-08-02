@@ -13,11 +13,7 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: npm start -- -H 0.0.0.0 -p $PORT
     healthCheckPath: /api/health
-    domains:
-      - relaybuy.a2zbtc.com
     envVars:
-      - key: APP_BASE_URL
-        value: https://relaybuy.a2zbtc.com
       - key: APPROVAL_TOKEN_PEPPER
         generateValue: true
       - key: READINESS_PROBE_TOKEN
@@ -41,7 +37,7 @@ services:
       - key: OPENAI_FALLBACK_MODEL
         value: gpt-5.6-sol
       - key: OPENAI_EXTRACTION_ENABLED
-        value: "false"
+        value: "true"
       - key: OPENAI_AGENTS_DISABLE_TRACING
         value: "1"
       - key: OPENAI_TRACE_INCLUDE_SENSITIVE_DATA
@@ -72,6 +68,8 @@ services:
         value: "false"
       - key: RELAYBUY_MERCHANT_ATTEMPT_ENABLED
         value: "false"
+      - key: RELAYBUY_PAYMENT_PAUSE_REASON
+        value: public-demo-payment-disabled
       - key: RELAYBUY_SECURITY_EMAIL
         value: security@a2zbtc.com
       - key: SENSO_API_KEY
