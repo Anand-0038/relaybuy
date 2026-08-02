@@ -179,6 +179,23 @@ describe("request security", () => {
     expect(() => assertTrustedMutationOrigin(trusted)).not.toThrow();
   });
 
+  it("accepts Render's internal request URL when public host headers match", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_BASE_URL", "");
+    vi.stubEnv("RENDER_EXTERNAL_URL", "https://relaybuy-example.onrender.com");
+    const trusted = new Request("http://localhost:10000/api/test", {
+      headers: {
+        host: "relaybuy-example.onrender.com",
+        origin: "https://relaybuy-example.onrender.com",
+        "sec-fetch-site": "same-origin",
+        "x-forwarded-host": "relaybuy-example.onrender.com",
+      },
+      method: "POST",
+    });
+
+    expect(() => assertTrustedMutationOrigin(trusted)).not.toThrow();
+  });
+
   it("checks mutation origin before authenticated work", () => {
     expect(() => assertTrustedMutationOrigin(mutation())).not.toThrow();
     expect(() =>

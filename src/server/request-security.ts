@@ -128,11 +128,12 @@ function assertProductionRequestHost(request: Request): void {
   if (!configured) return;
 
   const requestUrl = new URL(request.url);
-  const suppliedHosts = [
-    requestUrl.host,
+  const clientFacingHosts = [
     request.headers.get("host")?.trim(),
     request.headers.get("x-forwarded-host")?.split(",").at(-1)?.trim(),
   ].filter((host): host is string => Boolean(host));
+  const suppliedHosts =
+    clientFacingHosts.length > 0 ? clientFacingHosts : [requestUrl.host];
 
   if (suppliedHosts.some((host) => !isAllowedRequestHost(host, configured))) {
     throw new RequestSecurityError(
