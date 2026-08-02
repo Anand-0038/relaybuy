@@ -33,10 +33,10 @@ const evidenceTtlMinutes = Number.parseInt(
 if (
   !Number.isInteger(evidenceTtlMinutes) ||
   evidenceTtlMinutes < 15 ||
-  evidenceTtlMinutes > 1_440
+  evidenceTtlMinutes > 10_080
 ) {
   throw new Error(
-    "SENSO_EVIDENCE_TTL_MINUTES must be an integer from 15 through 1440",
+    "SENSO_EVIDENCE_TTL_MINUTES must be an integer from 15 through 10080",
   );
 }
 const variants = product.variants.map((variant) => ({
