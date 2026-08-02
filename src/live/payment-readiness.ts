@@ -27,6 +27,14 @@ export type SandboxPaymentAvailability =
       message: string;
     };
 
+export function getPravaSessionNotCreatedMessage(
+  availability: SandboxPaymentAvailability,
+): string {
+  return availability.enabled
+    ? "Manager approval must complete before RelayBuy can create one sandbox session."
+    : availability.message;
+}
+
 export function getSandboxPaymentAvailability(
   environment: Record<string, string | undefined>,
 ): SandboxPaymentAvailability {

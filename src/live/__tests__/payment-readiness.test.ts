@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { getSandboxPaymentAvailability } from "../payment-readiness";
+import {
+  getPravaSessionNotCreatedMessage,
+  getSandboxPaymentAvailability,
+} from "../payment-readiness";
 
 const safeEnvironment = {
   ALLOW_PRAVA_LIVE_ORDER: "false",
@@ -51,21 +54,27 @@ describe("sandbox payment availability", () => {
   });
 
   it("keeps every payment action paused during unknown-outcome reconciliation", () => {
-    expect(
-      getSandboxPaymentAvailability({
-        ...armedEnvironment,
-        RELAYBUY_PAYMENT_PAUSE_REASON: "PRAVA_UNKNOWN_OUTCOME",
-      }),
-    ).toMatchObject({
+    const availability = getSandboxPaymentAvailability({
+      ...armedEnvironment,
+      RELAYBUY_PAYMENT_PAUSE_REASON: "PRAVA_UNKNOWN_OUTCOME",
+    });
+    expect(availability).toMatchObject({
       enabled: false,
       reason: "UNKNOWN_OUTCOME_PAUSE",
     });
+    expect(getPravaSessionNotCreatedMessage(availability)).toContain(
+      "prior Prava session-create outcome is unknown",
+    );
   });
 
   it("arms session creation only with sandbox flags and full checkout readiness", () => {
-    expect(getSandboxPaymentAvailability(armedEnvironment)).toMatchObject({
+    const availability = getSandboxPaymentAvailability(armedEnvironment);
+    expect(availability).toMatchObject({
       enabled: true,
       reason: "READY",
     });
+    expect(getPravaSessionNotCreatedMessage(availability)).toContain(
+      "Manager approval must complete",
+    );
   });
 });

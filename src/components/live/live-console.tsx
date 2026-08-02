@@ -3,7 +3,10 @@
 import { useState } from "react";
 
 import type { LiveRequestSnapshot } from "@/live/types";
-import type { SandboxPaymentAvailability } from "@/live/payment-readiness";
+import {
+  getPravaSessionNotCreatedMessage,
+  type SandboxPaymentAvailability,
+} from "@/live/payment-readiness";
 
 import styles from "./live-console.module.css";
 
@@ -521,7 +524,7 @@ export function LiveConsole({
                   ? snapshot.prava.report
                     ? "Merchant decline observed and reported to Prava. No live funds moved and no order was created."
                     : "Sandbox session metadata is durable. Card credentials are never persisted or returned here."
-                  : "Manager approval must complete before RelayBuy can create a sandbox session."}
+                  : getPravaSessionNotCreatedMessage(paymentAvailability)}
               </p>
               {snapshot?.prava?.approvalUrl ? (
                 <a
