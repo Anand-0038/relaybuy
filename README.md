@@ -9,6 +9,7 @@ they spend. It turns a conversational request into one exact, evidence-backed
 purchase artifact, shows that artifact to a human, and allows payment only for
 the approved merchant, SKU, quantity, and total.
 
+[Try RelayBuy](https://relaybuy.onrender.com) ·
 [Judge demo](docs/JUDGE-DEMO.md) · [Architecture](docs/ARCHITECTURE.md) ·
 [Security](docs/SECURITY.md) · [Prava runbook](docs/PRAVA-SANDBOX-RUNBOOK.md) ·
 [Honest limitations](docs/KNOWN-LIMITATIONS.md)
