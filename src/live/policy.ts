@@ -129,7 +129,6 @@ export function evaluateLivePurchasePolicy(
     evidenceObservedAt - nowMs > maximumFutureSkewMs ||
     evidenceRetrievedAt - nowMs > maximumFutureSkewMs ||
     nowMs > evidenceFreshUntil ||
-    nowMs - evidenceObservedAt > maxEvidenceAgeMs ||
     nowMs - evidenceRetrievedAt > maxEvidenceAgeMs
   ) {
     checks.push({

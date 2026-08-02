@@ -227,6 +227,32 @@ describe("live purchase policy", () => {
     expect(decision.reasonCode).toBe("EVIDENCE_STALE");
   });
 
+  it("honors a digest-bound policy record's explicit freshness window", () => {
+    const decision = evaluateLivePurchasePolicy(
+      baseIntent,
+      {
+        ...offer,
+        expiresAt: "2026-07-29T04:30:00.000Z",
+        observedAt: "2026-07-29T04:00:00.000Z",
+      },
+      {
+        ...evidence,
+        authorization: {
+          ...evidence.authorization,
+          freshUntil: "2026-07-29T12:00:00.000Z",
+          observedAt: "2026-07-29T00:00:00.000Z",
+        },
+        retrievedAt: "2026-07-29T04:00:00.000Z",
+      },
+      {
+        minimumEvidenceScore: 0.35,
+        now: new Date("2026-07-29T04:10:00.000Z"),
+      },
+    );
+
+    expect(decision.status).toBe("pass");
+  });
+
   it("fails closed when evidence or quote timestamps are future-dated", () => {
     const futureEvidence = evaluateLivePurchasePolicy(
       baseIntent,
