@@ -1,4 +1,5 @@
 import { parseRuntimeConfig } from "@/config/runtime";
+import { pravaCustomerEmailSchema } from "@/integrations/prava/contract";
 
 const checkoutProfileNames = [
   "RELAYBUY_CHECKOUT_EMAIL",
@@ -61,9 +62,14 @@ export function getSandboxPaymentAvailability(
     };
   }
 
+  const cardholderName =
+    environment.RELAYBUY_CHECKOUT_CARDHOLDER_NAME?.trim() ?? "";
   const checkoutReady =
     environment.RELAYBUY_MERCHANT_ATTEMPT_ENABLED === "true" &&
-    checkoutProfileNames.every((name) => Boolean(environment[name]?.trim()));
+    checkoutProfileNames.every((name) => Boolean(environment[name]?.trim())) &&
+    pravaCustomerEmailSchema.safeParse(environment.RELAYBUY_CHECKOUT_EMAIL)
+      .success &&
+    /^[\p{L}][\p{L} .'-]*$/u.test(cardholderName);
   if (!checkoutReady) {
     return {
       enabled: false,

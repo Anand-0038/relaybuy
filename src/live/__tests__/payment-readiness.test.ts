@@ -53,6 +53,18 @@ describe("sandbox payment availability", () => {
     expect(availability.message).toContain("no request has been sent to Prava");
   });
 
+  it("refuses a non-routable email or non-alphabetic cardholder name", () => {
+    for (const environment of [
+      { ...armedEnvironment, RELAYBUY_CHECKOUT_EMAIL: "demo@relaybuy.test" },
+      { ...armedEnvironment, RELAYBUY_CHECKOUT_CARDHOLDER_NAME: "1234" },
+    ]) {
+      expect(getSandboxPaymentAvailability(environment)).toMatchObject({
+        enabled: false,
+        reason: "CHECKOUT_PROFILE_MISSING",
+      });
+    }
+  });
+
   it("keeps every payment action paused during unknown-outcome reconciliation", () => {
     const availability = getSandboxPaymentAvailability({
       ...armedEnvironment,

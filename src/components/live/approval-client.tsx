@@ -8,6 +8,31 @@ import type { SandboxPaymentAvailability } from "@/live/payment-readiness";
 
 import styles from "./live-console.module.css";
 
+type PasskeyReadiness = "checking" | "ready" | "unsupported";
+
+export function isUnsupportedPravaWebview(userAgent: string): boolean {
+  return /Electron\/|\bCode\/|;\s*wv\)/i.test(userAgent);
+}
+
+async function detectPasskeyReadiness(): Promise<PasskeyReadiness> {
+  if (isUnsupportedPravaWebview(navigator.userAgent)) {
+    return "unsupported";
+  }
+  const checker =
+    globalThis.PublicKeyCredential
+      ?.isUserVerifyingPlatformAuthenticatorAvailable;
+  if (!checker) {
+    return "unsupported";
+  }
+  try {
+    return (await checker.call(globalThis.PublicKeyCredential))
+      ? "ready"
+      : "unsupported";
+  } catch {
+    return "unsupported";
+  }
+}
+
 function pravaApprovalStorageKey(request: LiveRequestSnapshot): string | null {
   return request.prava
     ? `relaybuy:prava-approval-opened:${request.id}:${request.prava.createdAt}`
@@ -129,6 +154,8 @@ export function ApprovalClient({
 }) {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [passkeyReadiness, setPasskeyReadiness] =
+    useState<PasskeyReadiness>("checking");
   const [pravaApprovalOpened, setPravaApprovalOpened] = useState(false);
   const [request, setRequest] = useState<LiveRequestSnapshot | null>(null);
   const automaticExecutionStarted = useRef(false);
@@ -155,6 +182,16 @@ export function ApprovalClient({
     }
     return payload.request;
   }, [token]);
+
+  useEffect(() => {
+    let active = true;
+    void detectPasskeyReadiness().then((readiness) => {
+      if (active) setPasskeyReadiness(readiness);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -590,7 +627,7 @@ export function ApprovalClient({
                 automatically and will execute, report, and reconcile the exact
                 approved sandbox attempt when credentials are ready.
               </p>
-            ) : (
+            ) : passkeyReadiness === "ready" ? (
               <a
                 className={styles.approvalLink}
                 href={request.prava.approvalUrl}
@@ -600,7 +637,24 @@ export function ApprovalClient({
               >
                 Open Prava hosted approval
               </a>
+            ) : passkeyReadiness === "checking" ? (
+              <p className={styles.safetyCopy}>
+                Checking this browser for a platform passkey authenticator…
+              </p>
+            ) : (
+              <p className={styles.errorBanner}>
+                This browser cannot complete Prava passkey approval. Open this
+                approval page in Safari or Chrome on a device with Face ID,
+                Touch ID, Android biometrics, or Windows Hello.
+              </p>
             )}
+            {!pravaApprovalOpened ? (
+              <p className={styles.safetyCopy}>
+                Use a normal browser window and allow third-party cookies and
+                storage for Prava. Privacy extensions or embedded webviews can
+                prevent card-network verification from starting.
+              </p>
+            ) : null}
             <button
               className={styles.primaryButton}
               disabled={busy || !canReconcilePrava(request)}

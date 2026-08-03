@@ -8,6 +8,10 @@ import {
 import { z } from "zod";
 
 import { moneySchema, type Money } from "../../domain/money";
+import {
+  pravaCustomerEmailSchema,
+  pravaMerchantOriginSchema,
+} from "./contract";
 
 const SANDBOX_BASE_URL = "https://sandbox.api.prava.space";
 const SANDBOX_COLLECT_ORIGIN = "https://sandbox.collect.prava.space";
@@ -123,14 +127,12 @@ const revokeSessionResponseSchema = z
 const sessionInputSchema = z
   .object({
     userId: z.string().min(1).max(255),
-    userEmail: z.email(),
+    userEmail: pravaCustomerEmailSchema,
     total: moneySchema,
     merchant: z
       .object({
         name: z.string().min(1),
-        url: z.url().refine((value) => new URL(value).protocol === "https:", {
-          message: "Merchant URL must use HTTPS",
-        }),
+        url: pravaMerchantOriginSchema,
         countryCode: z.string().regex(/^[A-Z]{2}$/),
       })
       .strict(),
@@ -201,6 +203,7 @@ export class PravaSandboxGatewayError extends Error {
       responseId?: string;
       transportCode?: string;
       vendorCode?: string;
+      vendorMessage?: string;
       startedAt?: string;
       finishedAt?: string;
     } = {},
@@ -607,23 +610,33 @@ export class PravaSandboxGateway {
         .clone()
         .json()
         .catch(() => undefined);
-      const vendorCode = z
+      const vendorError = z
         .object({
-          error: z.object({ code: z.string().min(1) }).passthrough(),
+          error: z
+            .object({
+              code: z.string().min(1),
+              message: z.string().trim().min(1).max(500),
+            })
+            .passthrough(),
         })
         .passthrough()
         .safeParse(vendorPayload);
 
       throw new PravaSandboxGatewayError(
         "VENDOR_REQUEST_FAILED",
-        `The Prava sandbox request failed with status ${response.status}`,
+        vendorError.success
+          ? `Prava rejected the request (${vendorError.data.error.code}): ${vendorError.data.error.message}`
+          : `The Prava sandbox request failed with status ${response.status}`,
         {
           status: response.status,
           ...(responseId ? { responseId } : {}),
           startedAt,
           finishedAt,
-          ...(vendorCode.success
-            ? { vendorCode: vendorCode.data.error.code }
+          ...(vendorError.success
+            ? {
+                vendorCode: vendorError.data.error.code,
+                vendorMessage: vendorError.data.error.message,
+              }
             : {}),
         },
       );

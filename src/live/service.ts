@@ -552,7 +552,7 @@ export async function createLivePravaSession(
       throw new LiveRepositoryError(
         "CONFLICT",
         gatewayError?.details.status
-          ? `Prava rejected sandbox session creation (HTTP ${gatewayError.details.status}${gatewayError.details.vendorCode ? `, ${gatewayError.details.vendorCode}` : ""}); no session was created and the same approved operation may be retried.`
+          ? `Prava rejected sandbox session creation (HTTP ${gatewayError.details.status}${gatewayError.details.vendorCode ? `, ${gatewayError.details.vendorCode}` : ""})${gatewayError.details.vendorMessage ? `: ${gatewayError.details.vendorMessage}` : "."} No session was created; retry only after correcting the reported cause and an explicit user action.`
           : "Prava session creation was rejected before any vendor request; no session was created.",
       );
     }

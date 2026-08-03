@@ -64,6 +64,21 @@ describe("sandbox arm check", () => {
     );
   });
 
+  it("rejects non-routable emails and invalid cardholder names", () => {
+    const failures = sandboxArmFailures({
+      ...armedEnvironment,
+      RELAYBUY_CHECKOUT_CARDHOLDER_NAME: "1234",
+      RELAYBUY_CHECKOUT_EMAIL: "demo@relaybuy.local",
+    });
+
+    expect(failures).toContain(
+      "RELAYBUY_CHECKOUT_EMAIL must use a publicly delegated domain",
+    );
+    expect(failures).toContain(
+      "RELAYBUY_CHECKOUT_CARDHOLDER_NAME must contain a valid alphabetic name",
+    );
+  });
+
   it("requires a local ceremony origin", () => {
     expect(
       sandboxArmFailures({

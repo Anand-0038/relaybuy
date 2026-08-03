@@ -7,6 +7,7 @@ import {
   canReconcilePrava,
   getControlledSandboxReceipt,
   getPravaSessionCreationBlock,
+  isUnsupportedPravaWebview,
 } from "./approval-client";
 
 function requestWithPrava(
@@ -30,6 +31,24 @@ describe("Prava reconciliation availability", () => {
     expect(canReconcilePrava(requestWithPrava("reported", "failed"))).toBe(
       false,
     );
+  });
+});
+
+describe("Prava browser boundary", () => {
+  it.each([
+    "Mozilla/5.0 Electron/31.0 Chrome/126.0",
+    "Mozilla/5.0 Code/1.92 Electron/30.0",
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UP1A; wv)",
+  ])("blocks embedded webviews before checkout: %s", (userAgent) => {
+    expect(isUnsupportedPravaWebview(userAgent)).toBe(true);
+  });
+
+  it("allows a normal mobile Safari user agent to reach capability detection", () => {
+    expect(
+      isUnsupportedPravaWebview(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile/15E148 Safari/604.1",
+      ),
+    ).toBe(false);
   });
 });
 

@@ -1,6 +1,8 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { parse } from "tldts";
+
 import {
   ProjectEnvironmentError,
   loadProjectEnvironment,
@@ -78,6 +80,31 @@ export function sandboxArmFailures(environment) {
     if (!environment[name]?.trim()) {
       failures.push(`${name} is missing`);
     }
+  }
+
+  const checkoutEmail = environment.RELAYBUY_CHECKOUT_EMAIL?.trim() ?? "";
+  const checkoutEmailDomain = checkoutEmail
+    .slice(checkoutEmail.lastIndexOf("@") + 1)
+    .toLowerCase();
+  const checkoutEmailDomainResult = parse(checkoutEmailDomain, {
+    allowPrivateDomains: false,
+  });
+  if (
+    !checkoutEmail.includes("@") ||
+    !checkoutEmailDomainResult.domain ||
+    !checkoutEmailDomainResult.isIcann
+  ) {
+    failures.push(
+      "RELAYBUY_CHECKOUT_EMAIL must use a publicly delegated domain",
+    );
+  }
+
+  const cardholderName =
+    environment.RELAYBUY_CHECKOUT_CARDHOLDER_NAME?.trim() ?? "";
+  if (!/^[\p{L}][\p{L} .'-]*$/u.test(cardholderName)) {
+    failures.push(
+      "RELAYBUY_CHECKOUT_CARDHOLDER_NAME must contain a valid alphabetic name",
+    );
   }
 
   try {

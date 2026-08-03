@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { chromium, type Frame } from "playwright";
 import { z } from "zod";
 
+import { pravaCustomerEmailSchema } from "@/integrations/prava/contract";
 import type { PravaEphemeralCredentials } from "@/integrations/prava/sandbox-gateway";
 import type { ApprovalArtifact, VerifiedMerchantOffer } from "@/live/types";
 
@@ -22,14 +23,18 @@ import {
 const checkoutProfileSchema = z
   .object({
     address1: z.string().trim().min(3),
-    cardholderName: z.string().trim().min(3),
+    cardholderName: z
+      .string()
+      .trim()
+      .min(3)
+      .regex(/^[\p{L}][\p{L} .'-]*$/u),
     city: z.string().trim().min(2),
     countryCode: z
       .string()
       .trim()
       .toUpperCase()
       .regex(/^[A-Z]{2}$/),
-    email: z.email(),
+    email: pravaCustomerEmailSchema,
     firstName: z.string().trim().min(1),
     lastName: z.string().trim().min(1),
     postalCode: z.string().trim().min(3),
@@ -66,20 +71,18 @@ export class BonesCoffeeCheckoutError extends Error {
 }
 
 export function getBonesCoffeeCheckoutReadiness(): boolean {
-  return (
-    process.env.RELAYBUY_MERCHANT_ATTEMPT_ENABLED === "true" &&
-    [
-      "RELAYBUY_CHECKOUT_ADDRESS1",
-      "RELAYBUY_CHECKOUT_CARDHOLDER_NAME",
-      "RELAYBUY_CHECKOUT_CITY",
-      "RELAYBUY_CHECKOUT_COUNTRY_CODE",
-      "RELAYBUY_CHECKOUT_EMAIL",
-      "RELAYBUY_CHECKOUT_FIRST_NAME",
-      "RELAYBUY_CHECKOUT_LAST_NAME",
-      "RELAYBUY_CHECKOUT_POSTAL_CODE",
-      "RELAYBUY_CHECKOUT_REGION",
-    ].every((name) => Boolean(process.env[name]?.trim()))
-  );
+  if (process.env.RELAYBUY_MERCHANT_ATTEMPT_ENABLED !== "true") return false;
+  return checkoutProfileSchema.safeParse({
+    address1: process.env.RELAYBUY_CHECKOUT_ADDRESS1,
+    cardholderName: process.env.RELAYBUY_CHECKOUT_CARDHOLDER_NAME,
+    city: process.env.RELAYBUY_CHECKOUT_CITY,
+    countryCode: process.env.RELAYBUY_CHECKOUT_COUNTRY_CODE,
+    email: process.env.RELAYBUY_CHECKOUT_EMAIL,
+    firstName: process.env.RELAYBUY_CHECKOUT_FIRST_NAME,
+    lastName: process.env.RELAYBUY_CHECKOUT_LAST_NAME,
+    postalCode: process.env.RELAYBUY_CHECKOUT_POSTAL_CODE,
+    region: process.env.RELAYBUY_CHECKOUT_REGION,
+  }).success;
 }
 
 function getCheckoutProfile(): z.infer<typeof checkoutProfileSchema> {

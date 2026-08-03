@@ -2,6 +2,8 @@ import "server-only";
 
 import { z } from "zod";
 
+import { pravaCustomerEmailSchema } from "@/integrations/prava/contract";
+
 const postgresUrlSchema = z
   .string()
   .min(1)
@@ -54,7 +56,9 @@ const liveEnvironmentSchema = z.object({
     .regex(/^[A-Z]{2}$/)
     .default("US"),
   PRAVA_MERCHANT_SECRET_KEY: z.string().startsWith("sk_test_"),
-  PRAVA_USER_EMAIL: z.email().default("sandbox-user@relaybuy.app"),
+  PRAVA_USER_EMAIL: pravaCustomerEmailSchema.default(
+    "sandbox-user@relaybuy.app",
+  ),
   PRAVA_USER_ID: z.string().min(1).max(255).default("relaybuy-sandbox-user"),
   SENSO_API_KEY: z.string().min(10),
   SENSO_BASE_URL: z.url().default("https://apiv2.senso.ai/api/v1"),

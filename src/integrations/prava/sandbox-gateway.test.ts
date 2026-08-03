@@ -12,7 +12,7 @@ const sessionInput = {
   total: { amountMinor: 6_000, currency: "USD" },
   merchant: {
     name: "Replay Merchant",
-    url: "https://merchant.example",
+    url: "https://merchant.example.com",
     countryCode: "US",
   },
   product: {
@@ -141,7 +141,7 @@ describe("PravaSandboxGateway", () => {
         {
           merchant_details: {
             name: "Replay Merchant",
-            url: "https://merchant.example",
+            url: "https://merchant.example.com",
             country_code_iso2: "US",
           },
           product_details: [
@@ -174,7 +174,10 @@ describe("PravaSandboxGateway", () => {
     await expect(
       gateway.createSession({
         ...sessionInput,
-        merchant: { ...sessionInput.merchant, url: "http://merchant.example" },
+        merchant: {
+          ...sessionInput.merchant,
+          url: "http://merchant.example.com",
+        },
       }),
     ).rejects.toMatchObject({ code: "INVALID_SESSION_INPUT" });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -209,7 +212,7 @@ describe("PravaSandboxGateway", () => {
                   {
                     txn_ref_id: "txn_ref_example",
                     merchant_name: "Replay Merchant",
-                    merchant_url: "https://merchant.example",
+                    merchant_url: "https://merchant.example.com",
                     total_amount: "71.60",
                     status: "awaiting_result",
                     token: "4111111111111111",
@@ -567,7 +570,7 @@ describe("PravaSandboxGateway", () => {
     ).resolves.toMatchObject({ status: "completed" });
   });
 
-  it("preserves safe vendor diagnostics without exposing response bodies", async () => {
+  it("preserves the bounded vendor code and message needed for recovery", async () => {
     const gateway = new PravaSandboxGateway({
       secretKey: "sk_test_redacted_for_unit_test",
       fetch: vi.fn<typeof fetch>().mockResolvedValue(
@@ -588,10 +591,12 @@ describe("PravaSandboxGateway", () => {
 
     await expect(gateway.health()).rejects.toMatchObject({
       code: "VENDOR_REQUEST_FAILED",
+      message: "Prava rejected the request (PROVISION_ERROR): private detail",
       details: {
         status: 503,
         responseId: "safe-response-id",
         vendorCode: "PROVISION_ERROR",
+        vendorMessage: "private detail",
       },
     });
   });
