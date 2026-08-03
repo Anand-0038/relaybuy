@@ -9,6 +9,8 @@ they spend. It turns a conversational request into one exact, evidence-backed
 purchase artifact, shows that artifact to a human, and allows payment only for
 the approved merchant, SKU, quantity, and total.
 
+[Devfolio submission](https://devfolio.co/projects/relaybuy-5600) ·
+[Watch the demo](https://www.loom.com/share/86af3563f6884bae9c2748d33b542fbd) ·
 [Try RelayBuy](https://relaybuy.onrender.com) ·
 [Judge demo](docs/JUDGE-DEMO.md) · [Architecture](docs/ARCHITECTURE.md) ·
 [Security](docs/SECURITY.md) · [Prava runbook](docs/PRAVA-SANDBOX-RUNBOOK.md) ·
@@ -57,16 +59,7 @@ path with independently verified merchant facts and policy evidence.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    U[User request] --> I[OpenAI intent]
-    I --> E[Merchant + Senso evidence]
-    E --> G{Deterministic gates}
-    G -->|Mismatch| R[Refuse]
-    G -->|Exact match| H[Human approval]
-    H --> P[Prava]
-    P --> X[Attempt + reconcile]
-```
+[![RelayBuy architecture: OpenAI intent extraction and merchant and Senso evidence feed deterministic policy gates before human approval and Prava hosted checkout](public/relaybuy-architecture.jpg)](docs/ARCHITECTURE.md)
 
 OpenAI has no payment tools. PostgreSQL stores redacted workflow state and
 claims external operations before execution, so a timeout cannot silently
