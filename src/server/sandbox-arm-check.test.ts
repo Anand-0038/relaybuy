@@ -12,6 +12,7 @@ const armedEnvironment = {
   PRAVA_ENV: "sandbox",
   PRAVA_MERCHANT_SECRET_KEY: `sk_${"test_configured"}`,
   PRAVA_MODE: "sandbox",
+  PRAVA_USER_EMAIL: "sandbox-user@example.com",
   RELAYBUY_CHECKOUT_ADDRESS1: "1 Test Street",
   RELAYBUY_CHECKOUT_CARDHOLDER_NAME: "Test User",
   RELAYBUY_CHECKOUT_CITY: "Test City",
@@ -67,10 +68,14 @@ describe("sandbox arm check", () => {
   it("rejects non-routable emails and invalid cardholder names", () => {
     const failures = sandboxArmFailures({
       ...armedEnvironment,
+      PRAVA_USER_EMAIL: "owner@relaybuy.internal",
       RELAYBUY_CHECKOUT_CARDHOLDER_NAME: "1234",
       RELAYBUY_CHECKOUT_EMAIL: "demo@relaybuy.local",
     });
 
+    expect(failures).toContain(
+      "PRAVA_USER_EMAIL must use a publicly delegated domain",
+    );
     expect(failures).toContain(
       "RELAYBUY_CHECKOUT_EMAIL must use a publicly delegated domain",
     );

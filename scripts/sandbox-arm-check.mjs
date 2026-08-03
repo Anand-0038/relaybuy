@@ -32,6 +32,7 @@ const protectedNames = [
   "PRAVA_ENV",
   "PRAVA_MERCHANT_SECRET_KEY",
   "PRAVA_MODE",
+  "PRAVA_USER_EMAIL",
   "RELAYBUY_MERCHANT_ATTEMPT_ENABLED",
   "RELAYBUY_PAYMENT_PAUSE_REASON",
   "REPLAY_MUTATIONS_ENABLED",
@@ -53,6 +54,7 @@ const requiredNames = [
   "APP_BASE_URL",
   "APPROVAL_TOKEN_PEPPER",
   "DATABASE_URL",
+  "PRAVA_USER_EMAIL",
   "SENSO_POLICY_BINDINGS",
   ...requiredCheckoutNames,
 ];
@@ -82,21 +84,13 @@ export function sandboxArmFailures(environment) {
     }
   }
 
-  const checkoutEmail = environment.RELAYBUY_CHECKOUT_EMAIL?.trim() ?? "";
-  const checkoutEmailDomain = checkoutEmail
-    .slice(checkoutEmail.lastIndexOf("@") + 1)
-    .toLowerCase();
-  const checkoutEmailDomainResult = parse(checkoutEmailDomain, {
-    allowPrivateDomains: false,
-  });
-  if (
-    !checkoutEmail.includes("@") ||
-    !checkoutEmailDomainResult.domain ||
-    !checkoutEmailDomainResult.isIcann
-  ) {
-    failures.push(
-      "RELAYBUY_CHECKOUT_EMAIL must use a publicly delegated domain",
-    );
+  for (const emailName of ["PRAVA_USER_EMAIL", "RELAYBUY_CHECKOUT_EMAIL"]) {
+    const email = environment[emailName]?.trim() ?? "";
+    const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
+    const domainResult = parse(domain, { allowPrivateDomains: false });
+    if (!email.includes("@") || !domainResult.domain || !domainResult.isIcann) {
+      failures.push(`${emailName} must use a publicly delegated domain`);
+    }
   }
 
   const cardholderName =
