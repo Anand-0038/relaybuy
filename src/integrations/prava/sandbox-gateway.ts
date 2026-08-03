@@ -128,7 +128,9 @@ const sessionInputSchema = z
     merchant: z
       .object({
         name: z.string().min(1),
-        url: z.url(),
+        url: z.url().refine((value) => new URL(value).protocol === "https:", {
+          message: "Merchant URL must use HTTPS",
+        }),
         countryCode: z.string().regex(/^[A-Z]{2}$/),
       })
       .strict(),
@@ -157,6 +159,14 @@ const sessionInputSchema = z
       context.addIssue({
         code: "custom",
         message: "Total and unit price currencies must match",
+      });
+    } else if (
+      input.total.amountMinor !==
+      input.product.unitPrice.amountMinor * input.product.quantity
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Total must equal unit price multiplied by quantity",
       });
     }
   });
@@ -339,7 +349,6 @@ export class PravaSandboxGateway {
           currency: validInput.total.currency,
           external_order_ref: validInput.externalOrderRef,
           description: validInput.product.description,
-          integration_type: "full_checkout",
           purchase_context: [
             {
               merchant_details: {

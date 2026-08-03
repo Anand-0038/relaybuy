@@ -8,8 +8,8 @@ import {
 
 const sessionInput = {
   userId: "replay-user-001",
-  userEmail: "maya@example.test",
-  total: { amountMinor: 7_160, currency: "USD" },
+  userEmail: "maya@example.com",
+  total: { amountMinor: 6_000, currency: "USD" },
   merchant: {
     name: "Replay Merchant",
     url: "https://merchant.example",
@@ -126,19 +126,58 @@ describe("PravaSandboxGateway", () => {
       merchantOrderRef: null,
     });
     expect(JSON.stringify(result)).not.toContain("sensitive-session-jwt");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://sandbox.api.prava.space/v1/sessions",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining('"total_amount":"71.60"'),
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://sandbox.api.prava.space/v1/sessions");
+    expect(init).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String(init!.body))).toEqual({
+      user_id: "replay-user-001",
+      user_email: "maya@example.com",
+      total_amount: "60.00",
+      currency: "USD",
+      external_order_ref: "replay-request-site-b-001",
+      description: "Everyday Crew Tee · Black / Small",
+      purchase_context: [
+        {
+          merchant_details: {
+            name: "Replay Merchant",
+            url: "https://merchant.example",
+            country_code_iso2: "US",
+          },
+          product_details: [
+            {
+              description: "Everyday Crew Tee · Black / Small",
+              product_id: "replay-sku-001",
+              unit_price: "30.00",
+              quantity: 2,
+            },
+          ],
+          effective_until_minutes: 15,
+        },
+      ],
+    });
+  });
+
+  it("rejects inconsistent totals and non-HTTPS merchant URLs before Prava", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const gateway = new PravaSandboxGateway({
+      secretKey: "sk_test_redacted_for_unit_test",
+      fetch: fetchMock,
+    });
+
+    await expect(
+      gateway.createSession({
+        ...sessionInput,
+        total: { amountMinor: 7_160, currency: "USD" },
       }),
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://sandbox.api.prava.space/v1/sessions",
-      expect.objectContaining({
-        body: expect.stringContaining('"product_id":"replay-sku-001"'),
+    ).rejects.toMatchObject({ code: "INVALID_SESSION_INPUT" });
+    await expect(
+      gateway.createSession({
+        ...sessionInput,
+        merchant: { ...sessionInput.merchant, url: "http://merchant.example" },
       }),
-    );
+    ).rejects.toMatchObject({ code: "INVALID_SESSION_INPUT" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("redacts credential-bearing payment results to status only", async () => {
