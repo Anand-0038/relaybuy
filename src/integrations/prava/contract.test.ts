@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   pravaCustomerEmailSchema,
   pravaMerchantOriginSchema,
+  toPravaMerchantOrigin,
 } from "./contract";
 
 describe("Prava provider-boundary identifiers", () => {
@@ -42,5 +43,13 @@ describe("Prava provider-boundary identifiers", () => {
     expect(pravaMerchantOriginSchema.parse("https://www.bonescoffee.com")).toBe(
       "https://www.bonescoffee.com",
     );
+  });
+
+  it("projects a verified product URL to the bare origin sent to Prava", () => {
+    expect(
+      toPravaMerchantOrigin(
+        "https://www.bonescoffee.com/products/bones-coffee-company-gift-card",
+      ),
+    ).toBe("https://www.bonescoffee.com");
   });
 });

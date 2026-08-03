@@ -27,3 +27,7 @@ export const pravaMerchantOriginSchema = z.url().refine((value) => {
     return false;
   }
 }, "Prava merchant URL must be a bare HTTPS origin on a publicly delegated domain");
+
+export function toPravaMerchantOrigin(sourceUrl: string): string {
+  return pravaMerchantOriginSchema.parse(new URL(sourceUrl).origin);
+}

@@ -7,6 +7,7 @@ import {
   RuntimeConfigurationError,
 } from "@/config/runtime";
 import { evaluatePaymentGate } from "@/domain/payment-gate";
+import { toPravaMerchantOrigin } from "@/integrations/prava/contract";
 import {
   classifyPravaSessionCreateFailure,
   PravaSandboxGateway,
@@ -489,13 +490,14 @@ export async function createLivePravaSession(
 
   const artifact = current.approval!.artifact;
   const environment = getLiveEnvironment();
+  const pravaMerchantUrl = toPravaMerchantOrigin(merchantUrl);
   try {
     const session = await gateway.createSession({
       externalOrderRef: gate.idempotencyKey,
       merchant: {
         countryCode: environment.PRAVA_MERCHANT_COUNTRY,
         name: artifact.merchantName,
-        url: merchantUrl,
+        url: pravaMerchantUrl,
       },
       product: {
         description: `${artifact.productName} ${artifact.quotedColor} ${artifact.quotedSize} (${artifact.sku})`,
